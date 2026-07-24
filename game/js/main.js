@@ -4,6 +4,7 @@
   const screens = ['home', 'pick', 'game', 'result', 'notes'];
 
   let session = null, round = null, aiId = null, decideStart = 0;
+  let mode = 'spar'; // 'spar' | 'mirror'
 
   /* ── 화면 전환 ── */
   function show(name) {
@@ -15,14 +16,16 @@
   /* ── 홈 ── */
   function renderHome() {
     const s = Doppel.summary();
-    $('learn-count').textContent = `배운 선택: ${s.choices} · 파악한 상황: ${s.bucketsLearned}/${s.totalBuckets}`;
+    $('learn-count').textContent = (Doppel.isDemo() ? '[데모 분신] ' : '') + `배운 선택: ${s.choices} · 파악한 상황: ${s.bucketsLearned}/${s.totalBuckets}`;
     $('match-pct').textContent = s.matchRate === null ? '측정 전' : s.matchRate + '%';
     $('match-fill').style.width = (s.matchRate || 0) + '%';
     $('btn-mirror').disabled = !s.mirrorUnlocked;
+    document.querySelector('#btn-mirror .lock').style.display = s.mirrorUnlocked ? 'none' : '';
     $('home-quote').textContent = homeQuote(s);
   }
 
   function homeQuote(s) {
+    if (Doppel.isDemo()) return '"저는 시연용 분신이에요. 거울전 바로 열어뒀습니다 — 주소에서 ?demo를 떼면 진짜 당신을 배우기 시작하죠."';
     if (s.choices === 0) return '"…누구세요? 아, 제가 배울 사람이구나. 일단 뽑아보시죠."';
     if (s.choices < 15) return `"${s.choices}번 봤는데요, 아직 사장님이 겁쟁이인지 도박꾼인지 모르겠어요."`;
     if (s.matchRate === null || s.matchRate < 40) return '"슬슬 감이 오는데… 사장님, 생각보다 복잡한 사람이네요?"';
@@ -56,12 +59,24 @@
 
   /* ── 대전 플로우 ── */
   function startSession(id) {
+    mode = 'spar';
     aiId = id;
     session = Engine.newSession();
     show('game');
     $('opp-name').textContent = SparringAI.get(aiId).name;
     nextRound();
   }
+
+  function startMirror() {
+    mode = 'mirror';
+    session = Engine.newSession();
+    show('game');
+    $('opp-name').textContent = '분신 ◑';
+    nextRound();
+    seatNote('거울전. 상대는 당신에게 배운 대로 두는, 당신입니다.');
+  }
+
+  function oppTitle() { return mode === 'mirror' ? '분신' : SparringAI.get(aiId).name; }
 
   function nextRound() {
     const first = session.round % 2 === 0 ? 'me' : 'opp';
@@ -152,7 +167,8 @@
 
     // 분신 학습 — 진짜 선택이 있었던 순간만 (첫 장 강제 뽑기는 제외)
     if (hadChoice) Doppel.learn(ctx, act, ms);
-    Doppel.react(ctx, act, res).forEach(seatNote);
+    // 거울전에서는 분신이 관전이 아니라 플레이 중 — 리액션 생략
+    if (mode === 'spar') Doppel.react(ctx, act, res).forEach(seatNote);
 
     if (act === 'go') revealCard(res.card, () => { render(); step(); });
     else {
@@ -162,25 +178,47 @@
     }
   }
 
+  const MIRROR_SPEECH = {
+    go: ['여기선 가시던데요.', '사장님이라면 뽑았어요.', '배운 대로, 한 장 더.'],
+    stop: ['여기선 멈추시더라고요.', '사장님 같으면 확정이죠.', '배운 대로, 잠급니다.'],
+    unlearned: '이 상황은 아직 안 배웠어요. 기본기로 갈게요.',
+    bust: '💥 …이것도 당신에게 배운 결과인데요.',
+  };
+  const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+
   function oppMove() {
     const legal = Engine.legalActions(round, 'opp');
     if (!legal.length) return step();
     const ctx = Engine.context(session, round, 'opp');
-    const act = SparringAI.decide(aiId, ctx, legal);
-    const res = Engine.apply(session, round, 'opp', act);
-    const sp = SparringAI.get(aiId).speech;
-    $('opp-speech').textContent = res.busted ? sp.bust : sp[act];
 
-    if (act === 'go') revealCard(res.card, () => { render(); step(); });
-    else { render(); setTimeout(step, 700); }
+    let act, speech, extraDelay = 0;
+    if (mode === 'mirror') {
+      if (legal.length === 1) { act = 'go'; speech = ''; }
+      else {
+        const p = Doppel.play(ctx);
+        act = p.act;
+        speech = p.learned ? rand(MIRROR_SPEECH[act]) : MIRROR_SPEECH.unlearned;
+        extraDelay = Math.max(0, p.thinkMs - 700); // 내 결정 템포 흉내
+      }
+    } else {
+      act = SparringAI.decide(aiId, ctx, legal);
+      speech = SparringAI.get(aiId).speech[act];
+    }
+
+    setTimeout(() => {
+      const res = Engine.apply(session, round, 'opp', act);
+      if (res.busted) speech = mode === 'mirror' ? MIRROR_SPEECH.bust : SparringAI.get(aiId).speech.bust;
+      $('opp-speech').textContent = speech || '';
+      if (act === 'go') revealCard(res.card, () => { render(); step(); });
+      else { render(); setTimeout(step, 700); }
+    }, extraDelay);
   }
 
   function endRound() {
     Engine.endRound(session, round);
     Doppel.roundDone();
     render();
-    const opp = SparringAI.get(aiId).name;
-    centerFlash(`라운드 종료 — 나 +${round.banked.me} / ${opp} +${round.banked.opp}`);
+    centerFlash(`라운드 종료 — 나 +${round.banked.me} / ${oppTitle()} +${round.banked.opp}`);
     setTimeout(() => {
       if (session.over) endSession();
       else nextRound();
@@ -191,6 +229,20 @@
     show('result');
     const meWin = session.total.me > session.total.opp;
     const tie = session.total.me === session.total.opp;
+
+    if (mode === 'mirror') {
+      $('result-title').textContent = meWin ? '거울전 승리 — 분신을 넘었다' : tie ? '거울전 무승부' : '거울전 패배 — 나에게 졌다';
+      const p = Doppel.profile();
+      $('result-box').innerHTML =
+        `내 점수 <b>${session.total.me}</b> vs 분신 <b>${session.total.opp}</b><br>` +
+        `분신이 아는 나: <b>「${p.title}」</b><br>` +
+        p.top.map(t => `· ${t} 타입`).join('<br>');
+      $('result-quote').textContent = meWin
+        ? '"…오늘의 저는 어제의 사장님이니까요. 내일 다시 하죠."'
+        : '"당신처럼 뒀을 뿐이에요. 지금 진 건, 어제의 당신입니다."';
+      return;
+    }
+
     $('result-title').textContent = meWin ? '승리' : tie ? '무승부' : '패배';
     $('result-box').innerHTML =
       `내 점수 <b>${session.total.me}</b> vs ${SparringAI.get(aiId).name} <b>${session.total.opp}</b><br>` +
@@ -217,7 +269,8 @@
   $('btn-back-home').onclick = () => show('home');
   $('btn-notes-home').onclick = () => show('home');
   $('btn-result-home').onclick = () => show('home');
-  $('btn-again').onclick = () => startSession(aiId);
+  $('btn-again').onclick = () => mode === 'mirror' ? startMirror() : startSession(aiId);
+  $('btn-mirror').onclick = startMirror;
   document.querySelectorAll('.pick').forEach(p => p.onclick = () => startSession(p.dataset.ai));
 
   renderHome();
