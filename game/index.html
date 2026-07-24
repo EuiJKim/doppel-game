@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>도플 DOPPEL — 나를 배우는 분신</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 홈 화면 -->
+<section id="screen-home" class="screen active">
+  <div class="home-wrap">
+    <h1 class="logo">도플<span class="logo-en">DOPPEL</span></h1>
+    <p class="tagline">내 플레이를 배워, 나 대신 싸우고,<br>끝내 나와 마주하는 분신</p>
+
+    <div class="doppel-status">
+      <div class="doppel-face" id="doppel-face">◑</div>
+      <div class="doppel-info">
+        <div class="match-label">분신-나 일치율</div>
+        <div class="match-bar"><div class="match-fill" id="match-fill"></div></div>
+        <div class="match-pct" id="match-pct">0%</div>
+        <div class="learn-count" id="learn-count">배운 판: 0</div>
+      </div>
+    </div>
+
+    <div class="doppel-quote" id="home-quote">"…누구세요? 아, 제가 배울 사람이구나. 일단 쳐보시죠."</div>
+
+    <div class="menu">
+      <button class="btn primary" id="btn-spar">스파링 — 분신에게 보여주기</button>
+      <button class="btn" id="btn-notes">분신의 노트</button>
+      <button class="btn" id="btn-mirror" disabled>거울전 <span class="lock">🔒 60판 · 일치율 65%</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- 상대 선택 -->
+<section id="screen-pick" class="screen">
+  <h2 class="screen-title">스파링 상대</h2>
+  <div class="pick-list">
+    <button class="pick" data-ai="bulldozer">
+      <span class="pick-name">불도저</span>
+      <span class="pick-desc">일단 지르고 본다. 쫄면 진다.</span>
+    </button>
+    <button class="pick" data-ai="accountant">
+      <span class="pick-name">회계사</span>
+      <span class="pick-desc">강할 때만 돈을 넣는다. 베팅이 곧 패다.</span>
+    </button>
+    <button class="pick" data-ai="fox">
+      <span class="pick-name">여우</span>
+      <span class="pick-desc">함정을 판다. 체크를 믿지 마라.</span>
+    </button>
+  </div>
+  <button class="btn ghost" id="btn-back-home">← 돌아가기</button>
+</section>
+
+<!-- 대전 화면 -->
+<section id="screen-game" class="screen">
+  <div class="table">
+    <div class="opp-zone">
+      <div class="opp-name" id="opp-name">불도저</div>
+      <div class="chips" id="opp-chips">30</div>
+      <div class="card back" id="opp-card">?</div>
+      <div class="speech" id="opp-speech"></div>
+    </div>
+
+    <div class="pot-zone">
+      <div class="pot-label">팟</div>
+      <div class="pot" id="pot">2</div>
+      <div class="round-info" id="round-info">1 / 20</div>
+    </div>
+
+    <div class="my-zone">
+      <div class="card mine" id="my-card">7</div>
+      <div class="chips" id="my-chips">30</div>
+      <div class="actions" id="actions"></div>
+    </div>
+  </div>
+
+  <aside class="doppel-seat">
+    <div class="seat-head"><span class="doppel-mini">◑</span> 분신 관전 중</div>
+    <div class="seat-log" id="seat-log"></div>
+  </aside>
+</section>
+
+<!-- 세션 결과 -->
+<section id="screen-result" class="screen">
+  <h2 class="screen-title" id="result-title">세션 종료</h2>
+  <div class="result-box" id="result-box"></div>
+  <div class="doppel-quote" id="result-quote"></div>
+  <div class="menu">
+    <button class="btn primary" id="btn-again">한 번 더</button>
+    <button class="btn ghost" id="btn-result-home">홈으로</button>
+  </div>
+</section>
+
+<!-- 분신의 노트 -->
+<section id="screen-notes" class="screen">
+  <h2 class="screen-title">분신의 노트 — 당신에 대하여</h2>
+  <div class="notes-list" id="notes-list"></div>
+  <button class="btn ghost" id="btn-notes-home">← 돌아가기</button>
+</section>
+
+<script src="js/engine.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/doppel.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
