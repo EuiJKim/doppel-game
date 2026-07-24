@@ -66,8 +66,9 @@ html, body {
 .table { flex: 1; display: flex; flex-direction: column; justify-content: space-between; max-width: 520px; margin: 0 auto; }
 .opp-zone, .my-zone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .opp-name { font-weight: 800; font-size: 15px; }
-.chips { font-size: 13px; color: var(--accent); }
-.chips::before { content: '● '; font-size: 10px; }
+.score-line { font-size: 13px; color: var(--muted); }
+.score-line b { color: var(--accent); font-size: 15px; }
+.score-line .pile-num { color: var(--ink); }
 .card {
   width: 92px; height: 128px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
   font-size: 44px; font-weight: 900; background: #fff; color: #16161c;
@@ -76,14 +77,37 @@ html, body {
 .card.back { background: linear-gradient(135deg, #23232e 0%, #2e2e3e 100%); color: var(--muted); font-size: 30px; border: 1px solid var(--line); }
 .card.reveal { animation: flip 0.5s ease; }
 @keyframes flip { 0% { transform: rotateY(90deg); } 100% { transform: rotateY(0); } }
+.card.gemcard.g1 { background: #d8dbe4; }
+.card.gemcard.g2 { background: linear-gradient(135deg, #f4d97c, #e8c256); }
+.card.gemcard.g3 { background: linear-gradient(135deg, #9fd8fa, #6cc4f0); }
+.card.bombcard { background: linear-gradient(135deg, #3a1512, #1c0d0c); color: var(--danger); border: 1px solid var(--danger); animation: flip 0.5s ease, shake 0.45s 0.45s ease; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px) rotate(-2deg); }
+  40% { transform: translateX(7px) rotate(2deg); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
 .speech { min-height: 20px; font-size: 13px; color: var(--muted); font-style: italic; }
-.pot-zone { text-align: center; padding: 10px 0; }
-.pot-label { font-size: 11px; color: var(--muted); letter-spacing: 0.2em; }
-.pot { font-size: 34px; font-weight: 900; color: var(--accent); }
-.round-info { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.deck-zone { text-align: center; padding: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.deck-info { font-size: 13px; color: var(--muted); }
+.deck-info b { color: var(--ink); }
+.deck-info .bomb-num { color: var(--danger); }
+.round-info { font-size: 12px; color: var(--muted); }
+.center-msg { min-height: 20px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.pile { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 34px; align-items: center; }
+.gem {
+  width: 32px; height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 900; color: #16161c; animation: pop 0.25s ease;
+}
+.gem.g1 { background: #d8dbe4; }
+.gem.g2 { background: #e8c256; }
+.gem.g3 { background: #6cc4f0; }
+.pile-empty { color: var(--line); font-size: 15px; }
+.boom { font-size: 26px; animation: shake 0.45s ease; }
+.banked-tag { font-size: 12px; font-weight: 800; color: var(--ok); margin-left: 4px; }
 .actions { display: flex; gap: 8px; width: 100%; justify-content: center; min-height: 54px; flex-wrap: wrap; }
-.actions .btn { width: auto; min-width: 96px; padding: 14px 18px; }
-.actions .btn.fold { color: var(--danger); }
+.actions .btn { width: auto; min-width: 120px; padding: 14px 18px; }
 .actions .btn.aggr { background: var(--accent); border-color: var(--accent); color: #16161c; }
 
 /* 분신 관전석 */
@@ -114,5 +138,5 @@ html, body {
   #screen-game { flex-direction: column; }
   .doppel-seat { width: 100%; max-height: 150px; order: -1; }
   .card { width: 76px; height: 106px; font-size: 36px; }
-  .actions .btn { min-width: 84px; padding: 13px 14px; font-size: 15px; }
+  .actions .btn { min-width: 108px; padding: 13px 14px; font-size: 15px; }
 }

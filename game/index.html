@@ -12,7 +12,7 @@
 <section id="screen-home" class="screen active">
   <div class="home-wrap">
     <h1 class="logo">도플<span class="logo-en">DOPPEL</span></h1>
-    <p class="tagline">내 플레이를 배워, 나 대신 싸우고,<br>끝내 나와 마주하는 분신</p>
+    <p class="tagline">한 장 더 갈까, 여기서 멈출까 —<br>그 선택을 배워, 끝내 나와 마주하는 분신</p>
 
     <div class="doppel-status">
       <div class="doppel-face" id="doppel-face">◑</div>
@@ -29,7 +29,7 @@
     <div class="menu">
       <button class="btn primary" id="btn-spar">스파링 — 분신에게 보여주기</button>
       <button class="btn" id="btn-notes">분신의 노트</button>
-      <button class="btn" id="btn-mirror" disabled>거울전 <span class="lock">🔒 60판 · 일치율 65%</span></button>
+      <button class="btn" id="btn-mirror" disabled>거울전 <span class="lock">🔒 선택 80회 · 일치율 65%</span></button>
     </div>
   </div>
 </section>
@@ -40,15 +40,15 @@
   <div class="pick-list">
     <button class="pick" data-ai="bulldozer">
       <span class="pick-name">불도저</span>
-      <span class="pick-desc">일단 지르고 본다. 쫄면 진다.</span>
+      <span class="pick-desc">멈춤이란 없다. 터질 때까지 간다.</span>
     </button>
     <button class="pick" data-ai="accountant">
       <span class="pick-name">회계사</span>
-      <span class="pick-desc">강할 때만 돈을 넣는다. 베팅이 곧 패다.</span>
+      <span class="pick-desc">기대값이 음수면 그만. 계산이 곧 용기다.</span>
     </button>
     <button class="pick" data-ai="fox">
       <span class="pick-name">여우</span>
-      <span class="pick-desc">함정을 판다. 체크를 믿지 마라.</span>
+      <span class="pick-desc">점수판을 본다. 지면 달리고, 이기면 잠근다.</span>
     </button>
   </div>
   <button class="btn ghost" id="btn-back-home">← 돌아가기</button>
@@ -59,20 +59,21 @@
   <div class="table">
     <div class="opp-zone">
       <div class="opp-name" id="opp-name">불도저</div>
-      <div class="chips" id="opp-chips">30</div>
-      <div class="card back" id="opp-card">?</div>
+      <div class="score-line">확정 <b id="opp-total">0</b></div>
+      <div class="pile" id="opp-pile"></div>
       <div class="speech" id="opp-speech"></div>
     </div>
 
-    <div class="pot-zone">
-      <div class="pot-label">팟</div>
-      <div class="pot" id="pot">2</div>
-      <div class="round-info" id="round-info">1 / 20</div>
+    <div class="deck-zone">
+      <div class="deck-info">남은 카드 <b id="deck-count">20</b> · 폭탄 <b class="bomb-num" id="bomb-count">4</b></div>
+      <div class="card back" id="deck-card">?</div>
+      <div class="round-info" id="round-info">라운드 1 / 5</div>
+      <div class="center-msg" id="center-msg"></div>
     </div>
 
     <div class="my-zone">
-      <div class="card mine" id="my-card">7</div>
-      <div class="chips" id="my-chips">30</div>
+      <div class="pile mine" id="my-pile"></div>
+      <div class="score-line">내 확정 <b id="my-total">0</b> · 이번 더미 <b class="pile-num" id="my-pilescore">0</b></div>
       <div class="actions" id="actions"></div>
     </div>
   </div>
