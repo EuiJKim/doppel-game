@@ -61,10 +61,11 @@
     const s = Doppel.summary();
     const list = $('notes-list');
     list.innerHTML = '';
-    if (s.notes.length === 0) {
+    const skillLines = Doppel.skillLines();
+    if (s.notes.length === 0 && skillLines.length === 0) {
       list.innerHTML = '<div class="note-card locked">아직 백지예요. 뽑아 주셔야 배우죠.</div>';
     } else {
-      s.notes.forEach(n => {
+      s.notes.concat(skillLines.map(t => ({ text: '🎴 ' + t }))).forEach(n => {
         const d = document.createElement('div');
         d.className = 'note-card';
         d.textContent = n.text;
@@ -89,6 +90,9 @@
     $('call-badge').className = 'call-badge';
     $('opp-face').classList.remove('on');
     $('seat-title').textContent = '분신 관전 중';
+    $('skills').innerHTML = '';
+    const fx = document.querySelector('.fx-row');
+    if (fx) fx.innerHTML = '';
     renderCallGauge();
     refreshFaces();
   }
@@ -126,6 +130,8 @@
     $('opp-speech').textContent = '';
     $('center-msg').textContent = '';
     $('call-badge').className = 'call-badge';
+    const fxRow = document.querySelector('.fx-row');
+    if (fxRow) fxRow.innerHTML = '';
 
     // 마지막 라운드 = 미니 거울전. 상대석이 바뀐다
     if (mode === 'spar' && isMirrorSeat()) {
@@ -163,6 +169,8 @@
     $('round-info').textContent = `라운드 ${session.round} / ${session.maxRounds}`;
     renderPile('my-pile', round.pile.me, round.busted.me, round.banked.me, round.done.me);
     renderPile('opp-pile', round.pile.opp, round.busted.opp, round.banked.opp, round.done.opp);
+    $('opp-skills').textContent = Object.entries(Engine.SKILLS)
+      .map(([k, s]) => session.skills.opp[k] > 0 ? s.icon : '·').join(' ');
   }
 
   function renderPile(id, pile, busted, banked, done) {
@@ -185,16 +193,22 @@
   }
 
   /* 덱 카드 공개 연출 */
-  function revealCard(card, cb) {
+  function revealCard(card, cb, saved) {
     const c = $('deck-card');
     c.classList.remove('reveal');
     void c.offsetWidth; // 애니메이션 재시작
-    c.className = 'card reveal ' + (card.type === 'bomb' ? 'bombcard' : 'gemcard g' + card.v);
-    c.textContent = card.type === 'bomb' ? '💥' : card.v;
+    const kind = card.type === 'bomb' ? (saved ? 'savedcard' : 'bombcard') : 'gemcard g' + card.v;
+    c.className = 'card reveal ' + kind;
+    c.textContent = card.type === 'bomb' ? (saved ? '🛡' : '💥') : card.v;
     Sfx.play('draw');
     if (card.type === 'bomb') {
-      setTimeout(() => { Sfx.play('bomb'); quake(); }, 380);
-      setTimeout(cb, 1100);
+      if (saved) {                                   // 방패가 폭탄을 삼켰다 — 안도의 순간
+        setTimeout(() => { Sfx.play('bank'); centerFlash('🛡 방패가 폭탄을 막았다'); }, 320);
+        setTimeout(cb, 900);
+      } else {
+        setTimeout(() => { Sfx.play('bomb'); quake(); }, 380);
+        setTimeout(cb, 1100);
+      }
     } else {
       setTimeout(() => Sfx.play('gem', card.v), 300);
       setTimeout(cb, 650);
@@ -257,9 +271,76 @@
       : '아직 예측할 만큼 못 봤어요';
   }
 
+  /* ── 스킬 ── */
+  function renderSkills() {
+    const zone = $('skills');
+    zone.innerHTML = '';
+    const avail = Engine.availableSkills(session, round, 'me');
+    const myTurn = round.turn === 'me' && !round.done.me && !round.over;
+    Object.entries(Engine.SKILLS).forEach(([key, s]) => {
+      const b = document.createElement('button');
+      const left = session.skills.me[key];
+      const on = (key === 'shield' && round.shieldOn.me) || (key === 'double' && round.doubleOn.me);
+      b.className = 'skill-btn' + (on ? ' armed' : '');
+      b.disabled = !myTurn || !avail.includes(key);
+      b.title = s.desc;
+      b.innerHTML = `<span class="sk-ico">${s.icon}</span>${s.name}<span class="skill-hint">${on ? '켜짐' : left > 0 ? '×' + left : '소진'}</span>`;
+      b.onclick = () => useMySkill(key);
+      zone.appendChild(b);
+    });
+    // 켜져 있는 효과 + 상대 잔여 스킬
+    const fx = [];
+    if (round.shieldOn.me) fx.push('<span class="fx shield">🛡 방패 대기</span>');
+    if (round.doubleOn.me) fx.push('<span class="fx">✕2 배증 선언</span>');
+    if (round.peeked.me) fx.push(`<span class="fx peek">👁 다음 장: ${round.peeked.me.type === 'bomb' ? '폭탄!' : round.peeked.me.v + '점'}</span>`);
+    let row = document.querySelector('.fx-row');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'fx-row';
+      zone.parentNode.insertBefore(row, zone);
+    }
+    row.innerHTML = fx.join('');
+    $('opp-skills').textContent = Object.entries(Engine.SKILLS)
+      .map(([k, s]) => session.skills.opp[k] > 0 ? s.icon : '·').join(' ');
+  }
+
+  function useMySkill(key) {
+    const ctx = Engine.context(session, round, 'me');
+    const res = Engine.useSkill(session, round, 'me', key);
+    if (!res) return;
+    Doppel.learnSkill(key, ctx);              // 분신은 "언제 썼는지"를 배운다
+    Sfx.play(key === 'shield' ? 'bank' : key === 'peek' ? 'call' : 'hit');
+    const s = Engine.SKILLS[key];
+    if (key === 'peek') {
+      const c = res.card;
+      centerFlash(c.type === 'bomb' ? '👁 다음 장은 폭탄이다' : `👁 다음 장은 ${c.v}점`);
+    } else {
+      centerFlash(`${s.icon} ${s.name} 발동`);
+    }
+    seatNote(skillSeatLine(key, ctx));
+    renderSkills();
+    armMyTurn();                              // 스킬은 턴을 소모하지 않는다
+  }
+
+  function skillSeatLine(key, ctx) {
+    const n = Engine.SKILLS[key].name;
+    const j = josa(n);
+    if (ctx.diffBand === 'behind') return `지고 있으니 ${n}${j} 꺼내시네요. 적어둘게요.`;
+    if (ctx.diffBand === 'ahead') return `이기고 있는데도 ${n}${j}? 성격이 나오네요.`;
+    return `${n}, 지금이 그 타이밍이라고 보신 거군요.`;
+  }
+
+  /* 목적격 조사 — 받침 유무로 을/를 */
+  function josa(word) {
+    const code = word.charCodeAt(word.length - 1) - 0xac00;
+    if (code < 0 || code > 11171) return '를';
+    return code % 28 === 0 ? '를' : '을';
+  }
+
   function armMyTurn() {
     decideStart = performance.now();
     showCall();
+    renderSkills();
     const legal = Engine.legalActions(round, 'me');
     const zone = $('actions');
     zone.innerHTML = '';
@@ -279,6 +360,7 @@
 
   function myMove(act) {
     $('actions').innerHTML = '';
+    $('skills').innerHTML = '';
     const ms = performance.now() - decideStart;
     const ctx = Engine.context(session, round, 'me');
     const hadChoice = Engine.legalActions(round, 'me').includes('stop');
@@ -294,10 +376,10 @@
       Doppel.react(ctx, act, res).forEach(seatNote);
     }
 
-    if (act === 'go') revealCard(res.card, () => { render(); step(); });
+    if (act === 'go') revealCard(res.card, () => { render(); step(); }, res.saved);
     else {
       Sfx.play('bank');
-      centerFlash(`+${res.banked} 확정`);
+      centerFlash(res.doubled ? `✕2 발동 — +${res.banked} 확정!` : `+${res.banked} 확정`);
       render();
       setTimeout(step, 600);
     }
@@ -312,6 +394,31 @@
   const rand = arr => arr[Math.floor(Math.random() * arr.length)];
 
   function oppMove() {
+    const legal = Engine.legalActions(round, 'opp');
+    if (!legal.length) return step();
+    let ctx = Engine.context(session, round, 'opp');
+
+    // 스킬 먼저 — 턴을 소모하지 않으므로 쓰고 나서 행동을 정한다
+    const avail = Engine.availableSkills(session, round, 'opp');
+    const wantSkill = isMirrorSeat()
+      ? Doppel.playSkill(avail, ctx)                       // 분신은 내가 쓰던 타이밍을 따라 쓴다
+      : SparringAI.decideSkill(aiId, ctx, avail);
+    if (wantSkill && Engine.useSkill(session, round, 'opp', wantSkill)) {
+      const s = Engine.SKILLS[wantSkill];
+      const line = isMirrorSeat()
+        ? `${s.icon} ${s.name}. 사장님이 쓰시던 타이밍이잖아요.`
+        : (SparringAI.get(aiId).speech[wantSkill] || `${s.icon} ${s.name}`);
+      $('opp-speech').textContent = line;
+      if (isMirrorSeat()) Face.speak(faces.opp);
+      Sfx.play(wantSkill === 'shield' ? 'bank' : 'call');
+      ctx = Engine.context(session, round, 'opp');
+      render();
+      return setTimeout(oppAct, 800);
+    }
+    oppAct();
+  }
+
+  function oppAct() {
     const legal = Engine.legalActions(round, 'opp');
     if (!legal.length) return step();
     const ctx = Engine.context(session, round, 'opp');
@@ -335,10 +442,16 @@
     setTimeout(() => {
       const res = Engine.apply(session, round, 'opp', act);
       if (res.busted) speech = isMirrorSeat() ? MIRROR_SPEECH.bust : SparringAI.get(aiId).speech.bust;
+      if (res.saved) speech = '🛡 …막았다.';
       $('opp-speech').textContent = speech || '';
       if (isMirrorSeat() && speech) Face.speak(faces.opp);
-      if (act === 'go') revealCard(res.card, () => { render(); step(); });
-      else { Sfx.play('bank'); render(); setTimeout(step, 700); }
+      if (act === 'go') revealCard(res.card, () => { render(); step(); }, res.saved);
+      else {
+        Sfx.play('bank');
+        if (res.doubled) centerFlash(`${oppTitle()} ✕2 — +${res.banked}`);
+        render();
+        setTimeout(step, 700);
+      }
     }, extraDelay);
   }
 

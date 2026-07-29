@@ -15,7 +15,7 @@ const Doppel = (() => {
   let silent = 0;            // 리액션 없이 지나간 선택 수 (세션 한정, 저장 안 함)
 
   function fresh() {
-    return { buckets: {}, choices: 0, rounds: 0, recent: [], notes: [] };
+    return { buckets: {}, choices: 0, rounds: 0, recent: [], notes: [], skillUse: {} };
   }
   function load() {
     try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; }
@@ -49,6 +49,42 @@ const Doppel = (() => {
   }
 
   function bucketKey(ctx) { return `${ctx.pileBand}|${ctx.diffBand}|${ctx.danger}`; }
+
+  /* ── 스킬 사용 타이밍 학습 ──
+   * GO/STOP과 별개로 "언제 방패를 아끼고 언제 배증을 지르는가"가 그 사람의 성격이다.
+   * 사용한 순간의 상황만 기록한다(안 쓴 순간은 매 턴 쌓여 노이즈가 되므로).
+   */
+  function learnSkill(name, ctx) {
+    const s = state.skillUse[name] || (state.skillUse[name] = { n: 0, keys: {}, diff: {}, pile: {} });
+    s.n += 1;
+    s.keys[bucketKey(ctx)] = (s.keys[bucketKey(ctx)] || 0) + 1;
+    s.diff[ctx.diffBand] = (s.diff[ctx.diffBand] || 0) + 1;
+    s.pile[ctx.pileBand] = (s.pile[ctx.pileBand] || 0) + 1;
+    save();
+  }
+
+  /* 지금 이 상황이 "그 사람이 그 스킬을 쓰던 상황"인가 → 0~1 */
+  function skillUrge(name, ctx) {
+    const s = state.skillUse[name];
+    if (!s || !s.n) return 0;
+    const exact = (s.keys[bucketKey(ctx)] || 0) / s.n;      // 똑같은 상황에서 썼던 비율
+    const byDiff = (s.diff[ctx.diffBand] || 0) / s.n;        // 점수차 성향
+    const byPile = (s.pile[ctx.pileBand] || 0) / s.n;        // 더미 성향
+    return Math.min(1, exact * 0.5 + byDiff * 0.3 + byPile * 0.2);
+  }
+
+  /* 스킬 성향 한 줄 (노트·프로필용) — 2회 이상 관찰됐을 때만 */
+  function skillNote(name) {
+    const s = state.skillUse[name];
+    if (!s || s.n < 2) return null;
+    const top = (o) => Object.entries(o).sort((a, b) => b[1] - a[1])[0];
+    const [d, dn] = top(s.diff), [p] = top(s.pile);
+    if (dn / s.n < 0.6) return null;                          // 뚜렷한 편향이 없으면 단정하지 않는다
+    const diffKo = { behind: '지고 있고', even: '비등하고', ahead: '이기고 있고' }[d];
+    const pileKo = { low: '더미가 얇을 때', mid: '더미가 어중간할 때', high: '더미가 두툼할 때' }[p];
+    const nameKo = { shield: '방패', peek: '투시', double: '배증' }[name];
+    return `${diffKo} ${pileKo} ${nameKo}${josa(nameKo)} 꺼내는 타입. ${s.n}번 봤어요.`;
+  }
 
   /* ── 백오프(back-off) 추론 ──
    * 정확한 18버킷 표본은 한 라운드에 3~5개씩만 쌓인다. 그것만 기다리면
@@ -261,6 +297,13 @@ const Doppel = (() => {
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function chance(p) { return Math.random() < p; }
 
+  /* 목적격 조사 — 받침 유무로 을/를 */
+  function josa(word) {
+    const code = word.charCodeAt(word.length - 1) - 0xac00;
+    if (code < 0 || code > 11171) return '를';
+    return code % 28 === 0 ? '를' : '을';
+  }
+
   /* 프로필: 분신이 아는 나 — 최다 관찰 패턴 3줄 + 칭호 (거울전 결과 화면용) */
   function profile() {
     const learned = Object.entries(state.buckets).filter(([, b]) => b.n >= 3);
@@ -313,8 +356,24 @@ const Doppel = (() => {
     };
   }
 
+  /* 거울전에서 분신이 스킬을 쓸지 결정 — 내가 쓰던 상황에 왔을 때 나처럼 꺼낸다 */
+  function playSkill(available, ctx) {
+    let best = null, bestUrge = 0;
+    available.forEach(name => {
+      const u = skillUrge(name, ctx);
+      if (u > bestUrge) { bestUrge = u; best = name; }
+    });
+    if (!best || bestUrge < 0.3) return null;
+    return Math.random() < Math.min(0.85, bestUrge + 0.2) ? best : null;
+  }
+
+  function skillLines() {
+    return Object.keys({ shield: 1, peek: 1, double: 1 })
+      .map(skillNote).filter(Boolean);
+  }
+
   function isDemo() { return DEMO; }
   function reset() { localStorage.removeItem(KEY); location.reload(); }
 
-  return { learn, roundDone, react, predict, callOut, reactToCall, play, profile, matchRate, summary, isDemo, reset };
+  return { learn, learnSkill, roundDone, react, predict, callOut, reactToCall, play, playSkill, skillUrge, skillLines, profile, matchRate, summary, isDemo, reset };
 })();

@@ -12,11 +12,20 @@ const SparringAI = (() => {
         go: '한 장 더. 당연하지.',
         stop: '…오늘은 여기까지 해 주지.',
         bust: '펑? 다시 쌓으면 돼.',
+        shield: '방패? 겁쟁이나 아끼는 거지.',
+        peek: '뭐가 나오든 상관없지만.',
+        double: '두 배로 간다. 당연하지.',
       },
       // 더미 크기만 본다. 폭탄 비율은 무시 — 그게 불도저다.
       act(ctx) {
         const p = ctx.pileScore < 8 ? 0.95 : ctx.pileScore < 11 ? 0.55 : 0.25;
         return Math.random() < p ? 'go' : 'stop';
+      },
+      // 스킬도 아끼지 않는다 — 초반에 다 쏟아붓는 성격
+      skill(ctx, avail) {
+        if (avail.includes('double') && ctx.pileScore >= 3) return 'double';
+        if (avail.includes('shield')) return 'shield';
+        return null;
       },
     },
 
@@ -27,12 +36,22 @@ const SparringAI = (() => {
         go: '확률상 아직 이득입니다.',
         stop: '기대값이 음수로 돌아섰네요.',
         bust: '…계산 밖의 일입니다.',
+        shield: '리스크 헤지입니다.',
+        peek: '정보가 곧 수익이죠.',
+        double: '지금이 기대값 최대 구간입니다.',
       },
       // 다음 장의 기대값: (1-p)×평균보석 - p×더미. 양수일 때만 간다.
       act(ctx) {
         const ev = (1 - ctx.ratio) * 1.8 - ctx.ratio * ctx.pileScore;
         const want = ev > 0.4 ? 'go' : 'stop';
         return Math.random() < 0.08 ? flip(want) : want;
+      },
+      // 위험이 실제로 높아졌을 때만 자원을 쓴다
+      skill(ctx, avail) {
+        if (avail.includes('peek') && ctx.ratio >= 0.25 && ctx.pileScore >= 4) return 'peek';
+        if (avail.includes('shield') && ctx.ratio >= 0.3 && ctx.pileScore >= 6) return 'shield';
+        if (avail.includes('double') && ctx.ratio <= 0.15 && ctx.pileScore >= 5) return 'double';
+        return null;
       },
     },
 
@@ -43,6 +62,9 @@ const SparringAI = (() => {
         go: '점수판이 가라고 하네?',
         stop: '이럴 때 멈추는 게 여우지.',
         bust: '…이건 못 본 걸로.',
+        shield: '보험 하나 들어두지.',
+        peek: '살짝만 볼게.',
+        double: '역전은 이렇게 하는 거야.',
       },
       act(ctx) {
         let want;
@@ -50,6 +72,13 @@ const SparringAI = (() => {
         else if (ctx.diffBand === 'ahead') want = ctx.pileScore >= 4 ? 'stop' : 'go';
         else want = (ctx.pileScore < 6 && ctx.ratio < 0.3) ? 'go' : 'stop';
         return Math.random() < 0.1 ? flip(want) : want;
+      },
+      // 점수판을 보고 쓴다 — 지고 있으면 배증으로 도박, 이기고 있으면 방패로 잠금
+      skill(ctx, avail) {
+        if (ctx.diffBand === 'behind' && avail.includes('double') && ctx.pileScore >= 4) return 'double';
+        if (ctx.diffBand === 'ahead' && avail.includes('shield') && ctx.pileScore >= 5) return 'shield';
+        if (avail.includes('peek') && ctx.ratio >= 0.3) return 'peek';
+        return null;
       },
     },
   };
@@ -65,5 +94,13 @@ const SparringAI = (() => {
     return legal.includes(want) ? want : legal[0];
   }
 
-  return { get, decide, ARCHETYPES };
+  /* 스킬 사용 결정 — 아키타입 성격대로 */
+  function decideSkill(id, ctx, avail) {
+    if (!avail.length) return null;
+    const a = ARCHETYPES[id];
+    const want = a.skill ? a.skill(ctx, avail) : null;
+    return want && avail.includes(want) ? want : null;
+  }
+
+  return { get, decide, decideSkill, ARCHETYPES };
 })();
