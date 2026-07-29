@@ -47,7 +47,13 @@
 - 식사 제공, 숙박 미제공, 무료 주차
 - 문의: info@nhn-nan.com
 
-## 참가 신청 폼 (7/24 확인)
-- URL: https://docs.google.com/forms/d/e/1FAIpQLSdb2ifNzAdJpOYrRUCFA0DDQ7S56zTfcUsm79MI3aNTKOgsGg/viewform
-- **구글 로그인 필수** — 로그인 요구는 보통 파일 업로드 항목(PDF 3종)이 폼에 있다는 신호. 본인 구글 계정으로 열어야 항목 확인 가능
-- 필드 목록은 미확인 (로그인 벽) → **사용자가 직접 열어 항목 캡처 필요**. 서술형 항목(지원 동기·게임 소개 등)이 있을 수 있으니 마감 직전이 아니라 미리 확인할 것
+## 참가 신청 폼 (7/24 사용자 확인 — 필드 확정)
+- URL: https://docs.google.com/forms/d/e/1FAIpQLSdb2ifNzAdJpOYrRUCFA0DDQ7S56zTfcUsm79MI3aNTKOgsGg/viewform (구글 로그인 필수)
+- 필드 (서술형 없음 — 링크 2 + PDF 업로드 3 + 선택 1):
+  1. 플레이어블 빌드·소스: **GitHub 링크 기재** (필수)
+  2. 플레이 동영상: **YouTube 링크 기재** (필수, 공개/일부공개)
+  3. 게임 소개 문서: **PDF 업로드** (필수, 최대 1GB)
+  4. AI 활용 기술 문서: **PDF 업로드** (필수, 최대 1GB)
+  5. 팀 소개 문서: PDF 업로드 (2인 이상만)
+  6. **포트폴리오 및 참고자료: 선택** ← 기회 — AX 해커톤 본선 케이스가 실린 포트폴리오 사이트/PDF 첨부 가능. "디렉터 자질" 직접 증빙 슬롯
+- 시사점: 지원 동기 등 서술형이 없으므로 **문서 2종 PDF가 곧 자기소개**다. GitHub 링크는 1개 → README가 데모/일반 모드 안내를 겸해야 함
