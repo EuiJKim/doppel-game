@@ -50,6 +50,35 @@ const Doppel = (() => {
 
   function bucketKey(ctx) { return `${ctx.pileBand}|${ctx.diffBand}|${ctx.danger}`; }
 
+  /* ── 백오프(back-off) 추론 ──
+   * 정확한 18버킷 표본은 한 라운드에 3~5개씩만 쌓인다. 그것만 기다리면
+   * 분신은 몇 세션이 지나도 입을 못 연다. 그래서 n-gram 백오프와 같은 방식으로
+   * 좁은 상황 → 넓은 상황 순으로 물러나며 근거를 찾는다.
+   *   L0 더미×점수차×위험 (이 상황 그대로)  L1 더미×점수차  L2 더미만  L3 전체 성향
+   * 원칙 유지: 어느 층에서 답했는지를 항상 밝힌다. 노트(영구 주장)는 여전히 L0 3회 이상만.
+   */
+  const LEVELS = [
+    { id: 0, label: '이 상황', match: (k, c) => k === `${c.pileBand}|${c.diffBand}|${c.danger}` },
+    { id: 1, label: '비슷한 상황', match: (k, c) => k.startsWith(`${c.pileBand}|${c.diffBand}|`) },
+    { id: 2, label: '더미가 이만할 때', match: (k, c) => k.startsWith(`${c.pileBand}|`) },
+    { id: 3, label: '평소 성향', match: () => true },
+  ];
+
+  function infer(ctx, minN) {
+    for (const lv of LEVELS) {
+      let go = 0, stop = 0;
+      for (const [k, b] of Object.entries(state.buckets)) {
+        if (!lv.match(k, ctx)) continue;
+        go += b.go || 0; stop += b.stop || 0;
+      }
+      const n = go + stop;
+      if (n < minN) continue;
+      const act = go >= stop ? 'go' : 'stop';
+      return { act, n, lean: Math.max(go, stop) / n, level: lv.id, levelLabel: lv.label };
+    }
+    return null;
+  }
+
   /* 상황 → 한국어 구절 (노트·프로필 공용) */
   function phrase(pileBand, diffBand, danger, act) {
     const diffKo = { behind: '지고 있을 때', even: '비등할 때', ahead: '이기고 있을 때' }[diffBand];
@@ -59,27 +88,62 @@ const Doppel = (() => {
     return `${diffKo} ${pileKo}, ${dangKo} ${actKo}`;
   }
 
-  /* 예측: 현재 버킷의 최빈 행동 (표본 3 미만이면 null = 아직 모름) */
+  /* 예측(일치율 측정용): 백오프로 근거를 찾는다. 전체 표본이 3 미만이면 null = 아직 모름 */
   function predict(ctx) {
-    const b = state.buckets[bucketKey(ctx)];
-    if (!b || b.n < 3) return null;
-    return (b.go || 0) >= (b.stop || 0) ? 'go' : 'stop';
+    const r = infer(ctx, 3);
+    return r ? r.act : null;
+  }
+
+  /* 조기 예측 선언 — 내가 선택하기 "직전"에 거는 콜.
+   * 관찰 2회부터 입을 연다 (일치율 통계용 predict보다 이른 시점).
+   * 목적: 첫 세션 2~3분 안에 "읽혔다"는 소름을 만드는 것.
+   */
+  const CALL_LINES = {
+    go: {
+      guess: ['이건 감인데… 가시죠?', '아직 잘 모르지만, 뽑으실 것 같아요.'],
+      hunch: ['갈 것 같은데요.', '또 뽑으시죠? 느낌이 와요.', '멈출 리가 없죠, 사장님은.'],
+      sure: ['여기선 무조건 가십니다. 봤어요, 여러 번.', '한 장 더. 안 봐도 알아요.'],
+    },
+    stop: {
+      guess: ['이건 감인데… 멈추시죠?', '아직 잘 모르지만, 잠그실 것 같아요.'],
+      hunch: ['여기서 멈추실 것 같은데.', '슬슬 잠그시겠네요.', '이쯤에서 접으시죠?'],
+      sure: ['여기선 반드시 멈추십니다. 사장님 버릇이에요.', '멈춤. 이미 알고 있었어요.'],
+    },
+  };
+
+  /* 조기 예측 콜: 백오프로 근거를 찾되, 어느 층에서 말하는지 티가 나게 한다.
+   * L0 = "이 상황 그대로 봤다"(확신) / L1~2 = 감 / L3 = 순 성향 추측 */
+  function callOut(ctx) {
+    const r = infer(ctx, 2);
+    if (!r) return null;
+    if (r.lean < 0.6) return null;                       // 갈팡질팡하면 입 다문다
+    if (r.level >= 3 && r.lean < 0.75) return null;      // 근거 얇으면 함부로 말 안 함
+    const tone = (r.level === 0 && r.n >= 4 && r.lean >= 0.75) ? 'sure'
+      : r.level <= 1 ? 'hunch' : 'guess';
+    const prefix = r.level === 0 ? '' : `(${r.levelLabel} 기준) `;
+    return { act: r.act, n: r.n, level: r.level, sure: tone === 'sure', line: prefix + pick(CALL_LINES[r.act][tone]) };
   }
 
   /* 분신 플레이 (거울전): 버킷 분포에서 샘플링 + 내 결정 템포 흉내
    * 못 배운 버킷은 보수적 기본기(기대값 기준)로 두고 learned:false로 정직하게 알림 */
   function play(ctx) {
-    const b = state.buckets[bucketKey(ctx)];
-    if (!b || b.n < 3) {
-      const ev = (1 - ctx.ratio) * 1.8 - ctx.ratio * ctx.pileScore;
-      return { act: ev > 0.4 ? 'go' : 'stop', learned: false, thinkMs: 900 };
+    const exact = state.buckets[bucketKey(ctx)];
+    const thinkMs = exact && exact.n ? Math.max(500, Math.min(2500, exact.timeSum / exact.n)) : 900;
+
+    // 정확한 상황을 3번 이상 봤으면 그 분포 그대로 — "배운 대로"
+    if (exact && exact.n >= 3) {
+      const goP = (exact.go || 0) / exact.n;
+      return { act: Math.random() < goP ? 'go' : 'stop', learned: true, level: 0, thinkMs };
     }
-    const goP = (b.go || 0) / ((b.go || 0) + (b.stop || 0));
-    return {
-      act: Math.random() < goP ? 'go' : 'stop',
-      learned: true,
-      thinkMs: Math.max(500, Math.min(2500, b.timeSum / b.n)),
-    };
+    // 아니면 넓은 층의 기억으로 흉내 — 배운 척은 하지 않고 층을 밝힌다
+    const r = infer(ctx, 3);
+    if (r) {
+      const goP = r.act === 'go' ? r.lean : 1 - r.lean;
+      return { act: Math.random() < goP ? 'go' : 'stop', learned: false, level: r.level, levelLabel: r.levelLabel, thinkMs };
+    }
+    // 아무 기억도 없으면 기본기(기대값)
+    const ev = (1 - ctx.ratio) * 1.8 - ctx.ratio * ctx.pileScore;
+    return { act: ev > 0.4 ? 'go' : 'stop', learned: false, level: 4, thinkMs: 900 };
   }
 
   /* 학습: 내 선택 1건 기록 (+예측 대조로 일치율 갱신) */
@@ -149,6 +213,30 @@ const Doppel = (() => {
   /* 선택 직후 호출 — 1회성 리액션(저장 안 함)과 영구 노트(3회 관찰 시 봉인 해제)를 분리
    * 빈도 설계: 특이 상황은 확정~70%, 평범한 선택도 40%, 3연속 침묵이면 강제 발화
    */
+  /* 예측 콜의 결과 — 적중/빗나감 직후 대사 (거울전 서사의 씨앗) */
+  const CALL_RESULT = {
+    hit: [
+      '봤죠? 사장님은 사장님을 못 숨겨요.',
+      '적중. 이런 게 몇 개 더 쌓이면 제가 사장님이 되는 거죠.',
+      '역시. 이제 좀 알 것 같아요.',
+    ],
+    hitSure: [
+      '두 번 생각할 필요도 없었어요.',
+      '이건 이제 안 틀립니다. 사장님이니까요.',
+    ],
+    miss: [
+      '어? …틀렸네요. 이런 것도 사장님이구나.',
+      '빗나갔어요. 방금 그건 안 하시던 건데.',
+      '제 예상 밖. …좋아요, 그것도 배웠어요.',
+    ],
+  };
+
+  function reactToCall(call, act) {
+    if (!call) return null;
+    if (call.act === act) return pick(call.sure ? CALL_RESULT.hitSure : CALL_RESULT.hit);
+    return pick(CALL_RESULT.miss);
+  }
+
   function react(ctx, act, result) {
     const lines = [];
 
@@ -228,5 +316,5 @@ const Doppel = (() => {
   function isDemo() { return DEMO; }
   function reset() { localStorage.removeItem(KEY); location.reload(); }
 
-  return { learn, roundDone, react, predict, play, profile, matchRate, summary, isDemo, reset };
+  return { learn, roundDone, react, predict, callOut, reactToCall, play, profile, matchRate, summary, isDemo, reset };
 })();

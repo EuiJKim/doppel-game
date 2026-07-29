@@ -5,6 +5,14 @@
 
   let session = null, round = null, aiId = null, decideStart = 0;
   let mode = 'spar'; // 'spar' | 'mirror'
+  let pendingCall = null;                 // 이번 선택에 걸린 분신의 예측
+  let sessionCall = { n: 0, hit: 0 };     // 이번 세션 적중 집계
+
+  /* 미니 거울전: 스파링이라도 마지막 라운드는 분신이 상대석에 앉는다.
+   * "나와 마주함"을 정식 거울전(80선택+65%)까지 기다리지 않게 하는 장치. */
+  function isMirrorSeat() {
+    return mode === 'mirror' || session.round >= session.maxRounds;
+  }
 
   /* ── 화면 전환 ── */
   function show(name) {
@@ -58,25 +66,36 @@
   }
 
   /* ── 대전 플로우 ── */
+  function newSessionState() {
+    session = Engine.newSession();
+    sessionCall = { n: 0, hit: 0 };
+    pendingCall = null;
+    $('seat-log').innerHTML = '';
+    $('call-badge').className = 'call-badge';
+    renderCallGauge();
+  }
+
   function startSession(id) {
     mode = 'spar';
     aiId = id;
-    session = Engine.newSession();
+    newSessionState();
     show('game');
     $('opp-name').textContent = SparringAI.get(aiId).name;
+    $('opp-name').classList.remove('is-doppel');
     nextRound();
   }
 
   function startMirror() {
     mode = 'mirror';
-    session = Engine.newSession();
+    newSessionState();
     show('game');
     $('opp-name').textContent = '분신 ◑';
-    nextRound();
+    $('opp-name').classList.add('is-doppel');
     seatNote('거울전. 상대는 당신에게 배운 대로 두는, 당신입니다.');
+    nextRound();
   }
 
-  function oppTitle() { return mode === 'mirror' ? '분신' : SparringAI.get(aiId).name; }
+  function oppTitle() { return isMirrorSeat() ? '분신' : SparringAI.get(aiId).name; }
 
   function nextRound() {
     const first = session.round % 2 === 0 ? 'me' : 'opp';
@@ -86,6 +105,20 @@
     c.textContent = '?';
     $('opp-speech').textContent = '';
     $('center-msg').textContent = '';
+    $('call-badge').className = 'call-badge';
+
+    // 마지막 라운드 = 미니 거울전. 상대석이 바뀐다
+    if (mode === 'spar' && isMirrorSeat()) {
+      $('opp-name').textContent = '분신 ◑';
+      $('opp-name').classList.add('is-doppel');
+      centerFlash('마지막 라운드 — 분신이 상대석에 앉았다');
+      seatNote(sessionCall.n
+        ? `제 차례네요. 오늘 배운 것만 갖고 해볼게요. (${sessionCall.hit}/${sessionCall.n} 맞혔죠?)`
+        : '제 차례네요. 오늘 배운 것만 갖고 해볼게요.');
+      render();
+      setTimeout(step, 1600);
+      return;
+    }
     render();
     step();
   }
@@ -138,8 +171,44 @@
 
   function centerFlash(text) { $('center-msg').textContent = text; }
 
+  /* 분신의 조기 예측 — 버튼이 뜨기 전에 먼저 말한다 */
+  function showCall() {
+    const el = $('call-badge');
+    pendingCall = null;
+    el.className = 'call-badge';
+    el.textContent = '';
+    if (!Engine.legalActions(round, 'me').includes('stop')) return; // 강제 뽑기엔 콜 없음
+    const call = Doppel.callOut(Engine.context(session, round, 'me'));
+    if (!call) return;
+    pendingCall = call;
+    el.className = 'call-badge show' + (call.sure ? ' sure' : '');
+    el.textContent = `◑ "${call.line}"`;
+  }
+
+  function resolveCall(act) {
+    if (!pendingCall) return;
+    const hit = pendingCall.act === act;
+    sessionCall.n += 1;
+    if (hit) sessionCall.hit += 1;
+    const el = $('call-badge');
+    el.className = 'call-badge show ' + (hit ? 'hit' : 'miss');
+    el.textContent = hit ? '◑ 적중 ✓' : '◑ 빗나감 ✗';
+    seatNote((hit ? '✓ ' : '✗ ') + Doppel.reactToCall(pendingCall, act));
+    renderCallGauge();
+    pendingCall = null;
+  }
+
+  function renderCallGauge() {
+    const pct = sessionCall.n ? Math.round(100 * sessionCall.hit / sessionCall.n) : 0;
+    $('call-fill').style.width = pct + '%';
+    $('call-stat').textContent = sessionCall.n
+      ? `이번 판 예측 적중 ${sessionCall.hit}/${sessionCall.n} (${pct}%)`
+      : '아직 예측할 만큼 못 봤어요';
+  }
+
   function armMyTurn() {
     decideStart = performance.now();
+    showCall();
     const legal = Engine.legalActions(round, 'me');
     const zone = $('actions');
     zone.innerHTML = '';
@@ -167,8 +236,12 @@
 
     // 분신 학습 — 진짜 선택이 있었던 순간만 (첫 장 강제 뽑기는 제외)
     if (hadChoice) Doppel.learn(ctx, act, ms);
-    // 거울전에서는 분신이 관전이 아니라 플레이 중 — 리액션 생략
-    if (mode === 'spar') Doppel.react(ctx, act, res).forEach(seatNote);
+    const called = !!pendingCall;
+    resolveCall(act);
+    // 예측을 이미 말한 순간엔 일반 리액션까지 겹치지 않게 (터진 경우는 예외 — 폭탄은 항상 반응)
+    if (mode === 'spar' && (!called || res.busted)) {
+      Doppel.react(ctx, act, res).forEach(seatNote);
+    }
 
     if (act === 'go') revealCard(res.card, () => { render(); step(); });
     else {
@@ -192,12 +265,14 @@
     const ctx = Engine.context(session, round, 'opp');
 
     let act, speech, extraDelay = 0;
-    if (mode === 'mirror') {
+    if (isMirrorSeat()) {
       if (legal.length === 1) { act = 'go'; speech = ''; }
       else {
         const p = Doppel.play(ctx);
         act = p.act;
-        speech = p.learned ? rand(MIRROR_SPEECH[act]) : MIRROR_SPEECH.unlearned;
+        speech = p.learned ? rand(MIRROR_SPEECH[act])
+          : p.level === 4 ? MIRROR_SPEECH.unlearned
+          : `이 상황은 처음인데… ${p.levelLabel} 기억으로 갈게요.`;
         extraDelay = Math.max(0, p.thinkMs - 700); // 내 결정 템포 흉내
       }
     } else {
@@ -207,7 +282,7 @@
 
     setTimeout(() => {
       const res = Engine.apply(session, round, 'opp', act);
-      if (res.busted) speech = mode === 'mirror' ? MIRROR_SPEECH.bust : SparringAI.get(aiId).speech.bust;
+      if (res.busted) speech = isMirrorSeat() ? MIRROR_SPEECH.bust : SparringAI.get(aiId).speech.bust;
       $('opp-speech').textContent = speech || '';
       if (act === 'go') revealCard(res.card, () => { render(); step(); });
       else { render(); setTimeout(step, 700); }
@@ -215,8 +290,10 @@
   }
 
   function endRound() {
+    const wasMirrorRound = isMirrorSeat();
     Engine.endRound(session, round);
     Doppel.roundDone();
+    if (wasMirrorRound) session.mirrorRound = { me: round.banked.me, opp: round.banked.opp };
     render();
     centerFlash(`라운드 종료 — 나 +${round.banked.me} / ${oppTitle()} +${round.banked.opp}`);
     setTimeout(() => {
@@ -244,13 +321,17 @@
     }
 
     $('result-title').textContent = meWin ? '승리' : tie ? '무승부' : '패배';
+    const mr = session.mirrorRound;
+    const pct = sessionCall.n ? Math.round(100 * sessionCall.hit / sessionCall.n) : null;
     $('result-box').innerHTML =
       `내 점수 <b>${session.total.me}</b> vs ${SparringAI.get(aiId).name} <b>${session.total.opp}</b><br>` +
-      `라운드 ${session.wins.me}승 ${session.wins.opp}패 · 분신이 이번 세션을 지켜봤다`;
-    const s = Doppel.summary();
-    $('result-quote').textContent = meWin
-      ? `"이기는 법도 배웠어요. 일치율 ${s.matchRate ?? '측정 전'}${s.matchRate ? '%' : ''} — 저 좀 크지 않았어요?"`
-      : `"지는 법까지 배워버렸네요. …이것도 사장님 스타일이라면 할 말 없고요."`;
+      (pct !== null ? `분신의 예측 적중 <b>${sessionCall.hit}/${sessionCall.n}</b> (${pct}%)<br>` : '') +
+      (mr ? `마지막 라운드(분신전) 나 <b>${mr.me}</b> · 분신 <b>${mr.opp}</b>` : '');
+    $('result-quote').textContent = mr && mr.opp > mr.me
+      ? '"마지막 판, 제가 이겼죠? 사장님한테 배운 대로 했을 뿐인데요."'
+      : pct !== null && pct >= 60
+        ? `"${sessionCall.n}번 중 ${sessionCall.hit}번 맞혔어요. 슬슬 무섭지 않아요?"`
+        : '"아직 사장님을 다 모르겠네요. 한 판 더 보여주시죠."';
   }
 
   /* 관전석 노트 */
