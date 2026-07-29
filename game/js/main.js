@@ -7,6 +7,20 @@
   let mode = 'spar'; // 'spar' | 'mirror'
   let pendingCall = null;                 // 이번 선택에 걸린 분신의 예측
   let sessionCall = { n: 0, hit: 0 };     // 이번 세션 적중 집계
+  let faces = {};                         // home / seat / opp 얼굴 SVG
+
+  /* ── 분신의 얼굴 ── */
+  function initFaces() {
+    faces.home = Face.mount($('doppel-face'), 78);
+    faces.seat = Face.mount($('seat-face'), 30);
+    faces.opp = Face.mount($('opp-face'), 62);
+    refreshFaces();
+  }
+
+  function refreshFaces() {
+    const c = Face.clarityOf(Doppel.summary());
+    Object.values(faces).forEach(f => Face.apply(f, c));
+  }
 
   /* 미니 거울전: 스파링이라도 마지막 라운드는 분신이 상대석에 앉는다.
    * "나와 마주함"을 정식 거울전(80선택+65%)까지 기다리지 않게 하는 장치. */
@@ -29,6 +43,7 @@
     $('match-fill').style.width = (s.matchRate || 0) + '%';
     $('btn-mirror').disabled = !s.mirrorUnlocked;
     document.querySelector('#btn-mirror .lock').style.display = s.mirrorUnlocked ? 'none' : '';
+    refreshFaces();
     $('home-quote').textContent = homeQuote(s);
   }
 
@@ -72,7 +87,10 @@
     pendingCall = null;
     $('seat-log').innerHTML = '';
     $('call-badge').className = 'call-badge';
+    $('opp-face').classList.remove('on');
+    $('seat-title').textContent = '분신 관전 중';
     renderCallGauge();
+    refreshFaces();
   }
 
   function startSession(id) {
@@ -89,8 +107,10 @@
     mode = 'mirror';
     newSessionState();
     show('game');
-    $('opp-name').textContent = '분신 ◑';
+    $('opp-name').textContent = '분신';
     $('opp-name').classList.add('is-doppel');
+    $('opp-face').classList.add('on');
+    Sfx.play('mirror');
     seatNote('거울전. 상대는 당신에게 배운 대로 두는, 당신입니다.');
     nextRound();
   }
@@ -109,8 +129,13 @@
 
     // 마지막 라운드 = 미니 거울전. 상대석이 바뀐다
     if (mode === 'spar' && isMirrorSeat()) {
-      $('opp-name').textContent = '분신 ◑';
+      $('opp-name').textContent = '분신';
       $('opp-name').classList.add('is-doppel');
+      $('opp-face').classList.add('on');
+      $('seat-title').textContent = '분신이 상대석에';
+      refreshFaces();
+      Sfx.play('mirror');
+      Face.speak(faces.opp);
       centerFlash('마지막 라운드 — 분신이 상대석에 앉았다');
       seatNote(sessionCall.n
         ? `제 차례네요. 오늘 배운 것만 갖고 해볼게요. (${sessionCall.hit}/${sessionCall.n} 맞혔죠?)`
@@ -166,10 +191,32 @@
     void c.offsetWidth; // 애니메이션 재시작
     c.className = 'card reveal ' + (card.type === 'bomb' ? 'bombcard' : 'gemcard g' + card.v);
     c.textContent = card.type === 'bomb' ? '💥' : card.v;
-    setTimeout(cb, card.type === 'bomb' ? 1000 : 650);
+    Sfx.play('draw');
+    if (card.type === 'bomb') {
+      setTimeout(() => { Sfx.play('bomb'); quake(); }, 380);
+      setTimeout(cb, 1100);
+    } else {
+      setTimeout(() => Sfx.play('gem', card.v), 300);
+      setTimeout(cb, 650);
+    }
   }
 
-  function centerFlash(text) { $('center-msg').textContent = text; }
+  /* 폭탄 순간 — 화면이 흔들리고 붉게 번쩍인다 */
+  function quake() {
+    const t = document.querySelector('.table'), f = $('flash');
+    t.classList.remove('quake'); f.classList.remove('on');
+    void t.offsetWidth;
+    t.classList.add('quake'); f.classList.add('on');
+    setTimeout(() => { t.classList.remove('quake'); f.classList.remove('on'); }, 600);
+  }
+
+  function centerFlash(text) {
+    const el = $('center-msg');
+    el.textContent = text;
+    el.classList.remove('pulse');
+    void el.offsetWidth;
+    if (text) el.classList.add('pulse');
+  }
 
   /* 분신의 조기 예측 — 버튼이 뜨기 전에 먼저 말한다 */
   function showCall() {
@@ -183,6 +230,8 @@
     pendingCall = call;
     el.className = 'call-badge show' + (call.sure ? ' sure' : '');
     el.textContent = `◑ "${call.line}"`;
+    Sfx.play('call');
+    Face.speak(faces.seat);
   }
 
   function resolveCall(act) {
@@ -193,6 +242,8 @@
     const el = $('call-badge');
     el.className = 'call-badge show ' + (hit ? 'hit' : 'miss');
     el.textContent = hit ? '◑ 적중 ✓' : '◑ 빗나감 ✗';
+    Sfx.play(hit ? 'hit' : 'miss');
+    Face.flash(faces.seat, hit ? 'hit' : 'miss');
     seatNote((hit ? '✓ ' : '✗ ') + Doppel.reactToCall(pendingCall, act));
     renderCallGauge();
     pendingCall = null;
@@ -235,7 +286,7 @@
     const res = Engine.apply(session, round, 'me', act);
 
     // 분신 학습 — 진짜 선택이 있었던 순간만 (첫 장 강제 뽑기는 제외)
-    if (hadChoice) Doppel.learn(ctx, act, ms);
+    if (hadChoice) { Doppel.learn(ctx, act, ms); refreshFaces(); } // 배울 때마다 얼굴이 또렷해진다
     const called = !!pendingCall;
     resolveCall(act);
     // 예측을 이미 말한 순간엔 일반 리액션까지 겹치지 않게 (터진 경우는 예외 — 폭탄은 항상 반응)
@@ -245,6 +296,7 @@
 
     if (act === 'go') revealCard(res.card, () => { render(); step(); });
     else {
+      Sfx.play('bank');
       centerFlash(`+${res.banked} 확정`);
       render();
       setTimeout(step, 600);
@@ -284,8 +336,9 @@
       const res = Engine.apply(session, round, 'opp', act);
       if (res.busted) speech = isMirrorSeat() ? MIRROR_SPEECH.bust : SparringAI.get(aiId).speech.bust;
       $('opp-speech').textContent = speech || '';
+      if (isMirrorSeat() && speech) Face.speak(faces.opp);
       if (act === 'go') revealCard(res.card, () => { render(); step(); });
-      else { render(); setTimeout(step, 700); }
+      else { Sfx.play('bank'); render(); setTimeout(step, 700); }
     }, extraDelay);
   }
 
@@ -306,6 +359,7 @@
     show('result');
     const meWin = session.total.me > session.total.opp;
     const tie = session.total.me === session.total.opp;
+    Sfx.play(meWin ? 'win' : 'lose');
 
     if (mode === 'mirror') {
       $('result-title').textContent = meWin ? '거울전 승리 — 분신을 넘었다' : tie ? '거울전 무승부' : '거울전 패배 — 나에게 졌다';
@@ -342,6 +396,8 @@
     d.textContent = text;
     log.prepend(d);
     while (log.children.length > 6) log.removeChild(log.lastChild);
+    Sfx.play('note');
+    Face.speak(faces.seat);
   }
 
   /* ── 바인딩 ── */
@@ -354,5 +410,13 @@
   $('btn-mirror').onclick = startMirror;
   document.querySelectorAll('.pick').forEach(p => p.onclick = () => startSession(p.dataset.ai));
 
+  const muteBtn = $('btn-mute');
+  function renderMute() { muteBtn.textContent = Sfx.isMuted() ? '🔇' : '🔊'; }
+  muteBtn.onclick = () => { Sfx.toggleMute(); renderMute(); Sfx.play('gem', 2); };
+  renderMute();
+  // 오디오는 첫 사용자 제스처에서만 열린다
+  document.addEventListener('pointerdown', () => Sfx.ready(), { once: true });
+
+  initFaces();
   renderHome();
 })();

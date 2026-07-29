@@ -37,7 +37,31 @@ html, body {
 .logo-en { font-size: 14px; color: var(--muted); letter-spacing: 0.35em; margin-left: 10px; }
 .tagline { color: var(--muted); font-size: 15px; line-height: 1.6; }
 .doppel-status { display: flex; gap: 16px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
-.doppel-face { font-size: 44px; color: var(--doppel); }
+.doppel-face { width: 78px; height: 78px; flex: none; display: flex; align-items: center; justify-content: center; }
+
+/* ── 분신의 얼굴 (SVG) ── */
+.doppel-face-svg { display: block; overflow: visible; opacity: var(--face-op, 0.5); transition: opacity .8s ease; }
+.doppel-face-svg .face-eyes, .doppel-face-svg .face-mouth, .doppel-face-svg .face-halo { transition: opacity 1s ease; }
+.doppel-face-svg .face-blur { transition: stdDeviation .8s ease; }
+.doppel-face-svg .eye { transform-origin: center; }
+.face-speak { animation: faceSpeak .5s ease; }
+@keyframes faceSpeak {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.09) rotate(-2deg); }
+  100% { transform: scale(1); }
+}
+.face-hit .face-eyes { animation: eyeFlash .7s ease; }
+@keyframes eyeFlash {
+  0% { filter: none; }
+  25% { filter: drop-shadow(0 0 9px var(--ok)) brightness(1.7); }
+  100% { filter: none; }
+}
+.face-miss { animation: faceMiss .5s ease; }
+@keyframes faceMiss {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-4px) rotate(3deg); }
+  70% { transform: translateX(4px) rotate(-3deg); }
+}
 .doppel-info { flex: 1; }
 .match-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .match-bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
@@ -62,7 +86,33 @@ html, body {
 .pick-desc { font-size: 13px; color: var(--muted); }
 
 /* ── 대전 ── */
-#screen-game { flex-direction: row; gap: 16px; padding: 16px; }
+#screen-game { flex-direction: row; gap: 16px; padding: 16px; position: relative; }
+
+/* 폭탄 순간의 화면 충격 */
+.flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 45%, rgba(226,87,79,0.5), transparent 62%); z-index: 5; }
+.flash.on { animation: flashOut .5s ease; }
+@keyframes flashOut { 0% { opacity: 1; } 100% { opacity: 0; } }
+.table.quake { animation: quake .5s ease; }
+@keyframes quake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-9px, 4px); }
+  30% { transform: translate(8px, -5px); }
+  45% { transform: translate(-6px, -3px); }
+  60% { transform: translate(5px, 4px); }
+  80% { transform: translate(-3px, 1px); }
+}
+
+/* 음소거 토글 */
+.mute-btn {
+  position: fixed; right: 14px; bottom: 14px; z-index: 20;
+  width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); color: var(--muted); font-size: 16px;
+}
+.mute-btn:active { transform: scale(0.92); }
+
+/* 상대석 얼굴 (미니 거울전에서만 등장) */
+.opp-face { width: 0; height: 0; overflow: hidden; transition: none; }
+.opp-face.on { width: 62px; height: 62px; display: flex; align-items: center; justify-content: center; animation: pop .5s ease; }
 .table { flex: 1; display: flex; flex-direction: column; justify-content: space-between; max-width: 520px; margin: 0 auto; }
 .opp-zone, .my-zone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .opp-name { font-weight: 800; font-size: 15px; }
@@ -75,12 +125,16 @@ html, body {
   box-shadow: 0 6px 24px rgba(0,0,0,0.45);
 }
 .card.back { background: linear-gradient(135deg, #23232e 0%, #2e2e3e 100%); color: var(--muted); font-size: 30px; border: 1px solid var(--line); }
-.card.reveal { animation: flip 0.5s ease; }
-@keyframes flip { 0% { transform: rotateY(90deg); } 100% { transform: rotateY(0); } }
+.card.reveal { animation: dealIn 0.42s cubic-bezier(.2,.9,.25,1.3); }
+@keyframes dealIn {
+  0%   { transform: translateY(-46px) rotate(-14deg) scale(0.72); opacity: 0; }
+  60%  { opacity: 1; }
+  100% { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+}
 .card.gemcard.g1 { background: #d8dbe4; }
 .card.gemcard.g2 { background: linear-gradient(135deg, #f4d97c, #e8c256); }
 .card.gemcard.g3 { background: linear-gradient(135deg, #9fd8fa, #6cc4f0); }
-.card.bombcard { background: linear-gradient(135deg, #3a1512, #1c0d0c); color: var(--danger); border: 1px solid var(--danger); animation: flip 0.5s ease, shake 0.45s 0.45s ease; }
+.card.bombcard { background: linear-gradient(135deg, #3a1512, #1c0d0c); color: var(--danger); border: 1px solid var(--danger); animation: dealIn 0.42s cubic-bezier(.2,.9,.25,1.3), shake 0.45s 0.4s ease; }
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-7px) rotate(-2deg); }
@@ -95,10 +149,17 @@ html, body {
 .deck-info .bomb-num { color: var(--danger); }
 .round-info { font-size: 12px; color: var(--muted); }
 .center-msg { min-height: 20px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.center-msg.pulse { animation: msgIn .45s ease; }
+@keyframes msgIn { 0% { opacity: 0; transform: translateY(6px) scale(.94); } 100% { opacity: 1; transform: none; } }
 .pile { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 34px; align-items: center; }
 .gem {
   width: 32px; height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 900; color: #16161c; animation: pop 0.25s ease;
+  font-size: 15px; font-weight: 900; color: #16161c; animation: gemIn 0.34s cubic-bezier(.2,.9,.3,1.5);
+}
+@keyframes gemIn {
+  0% { transform: scale(0) rotate(-25deg); opacity: 0; }
+  60% { transform: scale(1.25) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
 }
 .gem.g1 { background: #d8dbe4; }
 .gem.g2 { background: #e8c256; }
@@ -145,8 +206,8 @@ html, body {
   width: 240px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
   padding: 14px; display: flex; flex-direction: column; gap: 10px;
 }
-.seat-head { font-size: 13px; font-weight: 700; color: var(--doppel); }
-.doppel-mini { font-size: 16px; }
+.seat-head { font-size: 13px; font-weight: 700; color: var(--doppel); display: flex; align-items: center; gap: 8px; }
+.doppel-mini { width: 30px; height: 30px; flex: none; display: flex; align-items: center; justify-content: center; }
 .seat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .seat-log .note { font-size: 12.5px; color: var(--ink); background: rgba(124,108,240,0.08); border-radius: 8px; padding: 8px 10px; line-height: 1.5; animation: pop 0.3s ease; }
 @keyframes pop { from { opacity: 0; transform: translateY(6px); } }

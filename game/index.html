@@ -15,7 +15,7 @@
     <p class="tagline">한 장 더 갈까, 여기서 멈출까 —<br>그 선택을 배워, 끝내 나와 마주하는 분신</p>
 
     <div class="doppel-status">
-      <div class="doppel-face" id="doppel-face">◑</div>
+      <div class="doppel-face" id="doppel-face"></div>
       <div class="doppel-info">
         <div class="match-label">분신-나 일치율</div>
         <div class="match-bar"><div class="match-fill" id="match-fill"></div></div>
@@ -56,8 +56,10 @@
 
 <!-- 대전 화면 -->
 <section id="screen-game" class="screen">
+  <div class="flash" id="flash"></div>
   <div class="table">
     <div class="opp-zone">
+      <div class="opp-face" id="opp-face"></div>
       <div class="opp-name" id="opp-name">불도저</div>
       <div class="score-line">확정 <b id="opp-total">0</b></div>
       <div class="pile" id="opp-pile"></div>
@@ -80,7 +82,7 @@
   </div>
 
   <aside class="doppel-seat">
-    <div class="seat-head"><span class="doppel-mini">◑</span> 분신 관전 중</div>
+    <div class="seat-head"><span class="doppel-mini" id="seat-face"></span> <span id="seat-title">분신 관전 중</span></div>
     <div class="call-gauge">
       <div class="call-bar"><div class="call-fill" id="call-fill"></div></div>
       <div class="call-stat" id="call-stat">아직 예측할 만큼 못 봤어요</div>
@@ -107,9 +109,13 @@
   <button class="btn ghost" id="btn-notes-home">← 돌아가기</button>
 </section>
 
+<button class="mute-btn" id="btn-mute" title="소리 켜기/끄기">🔊</button>
+
 <script src="js/engine.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/doppel.js"></script>
+<script src="js/face.js"></script>
+<script src="js/sfx.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
