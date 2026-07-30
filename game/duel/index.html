@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>도플: 결투 — D1 손맛 프로토타입</title>
+<title>도플: 결투 — 죽을수록 나를 아는 검객</title>
 <link rel="stylesheet" href="duel.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
   <!-- 타이틀 -->
   <div class="overlay" id="ov-title">
     <h1>도플: 결투</h1>
-    <p class="sub">D1 프로토타입 — 손맛 판정용 (학습 AI 미탑재)</p>
+    <p class="sub">죽을수록 당신을 아는 검객 — 놈은 당신의 버릇을 배워 페인트로 응징한다.<br>이기는 방법은 하나, 당신 자신을 배신하는 것.</p>
     <div class="howto">
       <div><span class="cue cue-high">상단베기</span> → <b>⚔ 쳐내기</b> <kbd>A</kbd>/<kbd>←</kbd></div>
       <div><span class="cue cue-low">하단베기</span> → <b>⤴ 점프</b> <kbd>S</kbd>/<kbd>↓</kbd></div>
@@ -31,13 +31,25 @@
       <div class="howto-counter">응수 성공 → 빈틈! <b>아무 버튼 = 반격</b> · 마지막 순간 응수 = <b>완벽(2딜)</b></div>
     </div>
     <button class="big-btn" id="btn-start">결투 시작</button>
+    <button class="ghost-btn btn-forget">놈의 기억 지우기</button>
+  </div>
+
+  <!-- 인터미션: 놈이 배운 것 -->
+  <div class="overlay hidden" id="ov-inter">
+    <h1 id="inter-title">결투 1 승리</h1>
+    <p class="sub">놈이 당신에 대해 적은 것 —</p>
+    <div class="learn-box" id="inter-lines"></div>
+    <button class="big-btn" id="btn-next-duel">다음 결투</button>
   </div>
 
   <!-- 사망 -->
   <div class="overlay hidden" id="ov-dead">
     <h1 class="dead-title">패배</h1>
     <p class="sub" id="dead-stats"></p>
-    <button class="big-btn" id="btn-retry">다시</button>
+    <p class="sub">놈은 죽지 않는다. 그리고 이렇게 적었다 —</p>
+    <div class="learn-box" id="dead-lines"></div>
+    <button class="big-btn" id="btn-retry">다시 (놈은 기억한다)</button>
+    <button class="ghost-btn btn-forget">놈의 기억 지우기</button>
   </div>
 </div>
 

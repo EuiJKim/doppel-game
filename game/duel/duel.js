@@ -38,6 +38,55 @@
   let running = false;
   let lastT = 0;
 
+  /* ── 학습 (D2) — 놈은 죽지 않고, 새로고침해도 기억한다 ──
+   * 배우는 것: ①공격별로 당신이 얼마나 맞는가(약점) ②응수 타이밍 버릇(성급/완벽충)
+   * 무기: 약점 공격 편중 / 성급한 자에게 페인트 / 완벽충에게 속공
+   * 역이용(패턴 낚시): 일부러 성급한 척 → 페인트 유도 → 기다렸다 간파(2딜)
+   */
+  const Learn = (() => {
+    const KEY = 'duel_v1';
+    let L = load() || fresh();
+    function fresh() {
+      return {
+        perType: { high: { n: 0, hits: 0 }, low: { n: 0, hits: 0 }, thrust: { n: 0, hits: 0 } },
+        fracs: [],                      // 최근 응수 시점 (t/dur)
+        feints: { tried: 0, landed: 0 },
+        quicks: { tried: 0, landed: 0 },
+      };
+    }
+    function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
+    function save() { localStorage.setItem(KEY, JSON.stringify(L)); }
+
+    function onDefend(type, gotHit) { L.perType[type].n += 1; if (gotHit) L.perType[type].hits += 1; save(); }
+    function onRespond(frac) { L.fracs.push(Math.min(1, frac)); if (L.fracs.length > 12) L.fracs.shift(); save(); }
+    function onFeint(landed) { L.feints.tried += 1; if (landed) L.feints.landed += 1; save(); }
+    function onQuick(landed) { L.quicks.tried += 1; if (landed) L.quicks.landed += 1; save(); }
+
+    function avgFrac() { return L.fracs.length >= 4 ? L.fracs.reduce((a, b) => a + b, 0) / L.fracs.length : null; }
+    function failRate(type) { const p = L.perType[type]; return p.n >= 2 ? p.hits / p.n : 0; }
+    function weakest() {
+      let best = null, bestR = 0.34;
+      ATK.forEach(t => { const r = failRate(t); if (L.perType[t].n >= 3 && r > bestR) { bestR = r; best = t; } });
+      return best;
+    }
+
+    /* 인터미션·사망 화면용 — 숫자와 함께, 아는 만큼만 (정직 원칙) */
+    function lines() {
+      const out = [];
+      const w = weakest();
+      if (w) out.push(`${ATK_KO[w]}에 ${L.perType[w].n}번 중 ${L.perType[w].hits}번 적중 — 계속 노린다.`);
+      const f = avgFrac();
+      if (f !== null && f < 0.55) out.push(`응수가 성급하다 (평균 ${Math.round(f * 100)}% 시점) — 페인트 장전.`);
+      if (f !== null && f > 0.8) out.push(`완벽만 노린다 (평균 ${Math.round(f * 100)}% 시점) — 속공 준비.`);
+      if (L.feints.tried > 0) out.push(`페인트 ${L.feints.tried}회 중 ${L.feints.landed}회 적중.`);
+      if (!out.length) out.push('…아직 배우는 중이다. 더 싸워라.');
+      return out;
+    }
+    function reset() { L = fresh(); save(); }
+    function raw() { return L; }
+    return { onDefend, onRespond, onFeint, onQuick, avgFrac, failRate, weakest, lines, reset, raw };
+  })();
+
   function newSession() {
     S = {
       duel: 1, score: { counters: 0, perfects: 0, hitsTaken: 0 },
@@ -52,14 +101,50 @@
     renderHUD();
   }
 
-  /* ── 적의 공격 선택 — D2에서 학습 AI로 교체되는 지점 ── */
+  /* ── 적의 공격 선택 — D2: 학습 기반 ──
+   * 반환: { type, feintFrom, switchFrac, quick } — 페인트면 예고가 feintFrom으로 시작해 도중에 type으로 바뀐다
+   */
   function chooseAttack() {
-    let pool = ATK.filter(a => a !== S.lastAtk || Math.random() < 0.3); // 약한 반복 회피
-    const pick = pool[Math.floor(Math.random() * pool.length)];
+    // 약점 편중: 실패율만큼 가중치
+    const weights = ATK.map(t => 1 + 2.4 * Learn.failRate(t) + (t === S.lastAtk ? -0.35 : 0));
+    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let pick = ATK[0];
+    for (let i = 0; i < ATK.length; i++) { if ((r -= weights[i]) <= 0) { pick = ATK[i]; break; } }
     S.lastAtk = pick;
-    return pick;
+
+    const plan = { type: pick };
+    const f = Learn.avgFrac();
+    // 성급한 상대 → 페인트 (결투 2부터)
+    if (S.duel >= 2 && f !== null && f < 0.55) {
+      const chance = Math.min(0.45, 0.18 + (0.55 - f));
+      if (Math.random() < chance) {
+        const others = ATK.filter(t => t !== pick);
+        plan.feintFrom = others[Math.floor(Math.random() * others.length)];
+        plan.switchFrac = 0.5 + Math.random() * 0.12;
+      }
+    }
+    // 완벽충 → 속공 (결투 2부터)
+    if (!plan.feintFrom && S.duel >= 2 && f !== null && f > 0.8 && Math.random() < 0.25) plan.quick = true;
+    return plan;
   }
   function chainLen() { return 1 + Math.floor(Math.random() * Math.min(1 + S.duel, 4)); }
+
+  function startTelegraph(chainLeft) {
+    const plan = chooseAttack();
+    let dur = Math.max(CFG.telegraphMin, S.telegraphMs * (P && P.chainLeft > 0 ? 0.94 : 1));
+    if (plan.feintFrom) dur *= 1.22;           // 페인트는 총 길이를 늘려 간파 여지를 준다
+    if (plan.quick) dur *= 0.62;
+    setPhase('telegraph', dur, {
+      type: plan.feintFrom || plan.type,       // 페인트면 가짜로 시작
+      realType: plan.type,
+      feint: !!plan.feintFrom,
+      switchFrac: plan.switchFrac,
+      quick: !!plan.quick,
+      switched: false, committed: null,
+      chainLeft,
+    });
+    sfx.tension();
+  }
 
   /* ── 페이즈 진행 ── */
   function setPhase(name, dur, extra = {}) { P = { name, t: 0, dur, ...extra, chainLeft: extra.chainLeft ?? P.chainLeft }; }
@@ -85,13 +170,30 @@
 
     switch (P.name) {
       case 'breather':
-        if (P.t >= P.dur) {
-          setPhase('telegraph', S.telegraphMs, { type: chooseAttack(), chainLeft: P.chainLeft > 0 ? P.chainLeft : chainLen() });
-          sfx.tension();
-        }
+        if (P.t >= P.dur) startTelegraph(P.chainLeft > 0 ? P.chainLeft : chainLen());
         break;
       case 'telegraph':
-        if (P.t >= P.dur) { setPhase('attack', CFG.attackMs, { type: P.type, responded: P.responded, wrong: P.wrong }); sfx.whoosh(); }
+        // 페인트 전환 — 가짜 예고가 진짜로 바뀌는 순간
+        if (P.feint && !P.switched && P.t >= P.dur * P.switchFrac) {
+          P.switched = true;
+          P.type = P.realType;
+          fx.enemyFlash = 0.5;
+          burst(600, 280, ATK_COLOR[P.type], 8);
+          sfx.feint();
+        }
+        if (P.t >= P.dur) {
+          // 커밋 평가: 페인트 앞구간에 이미 응수한 경우
+          if (P.committed !== null && !P.responded && !P.wrong) {
+            if (P.committed === ATK.indexOf(P.type)) {   // 운 좋게 진짜와 일치 — 표준 응수 처리
+              parrySuccess(false, false);
+              return;
+            }
+            P.wrong = true;                              // 가짜에 속음
+            P.feintHit = true;
+          }
+          setPhase('attack', CFG.attackMs, { type: P.type, responded: P.responded, wrong: P.wrong, feint: P.feint, feintHit: P.feintHit, quick: P.quick, chainLeft: P.chainLeft });
+          sfx.whoosh();
+        }
         break;
       case 'attack':
         if (P.t >= P.dur) resolveAttack();
@@ -100,31 +202,34 @@
         if (P.t >= P.dur) { announce('놓쳤다', 'purple'); endChain(); }
         break;
       case 'duelwon':
-        if (P.t >= P.dur) nextDuel();
+        if (P.t >= P.dur) showIntermission();
         break;
     }
   }
 
   function resolveAttack() {
     if (P.responded) { endChain(); return; }         // 이미 응수 성공 → stagger에서 처리됨 (안전망)
-    // 피격
+    // 피격 — 학습 기록
+    Learn.onDefend(P.type, true);
+    if (P.feint) Learn.onFeint(true);
+    if (P.quick) Learn.onQuick(true);
     S.playerHP -= 1;
     S.score.hitsTaken += 1;
     S.playerPose = 'hurt'; S.playerPoseT = 0;
     fx.shake = 26; fx.flash = 1; fx.playerFlash = 1; fx.hitStop = CFG.hitStopMs;
     burst(300, 340, '#e2574f', 14);
     sfx.hit();
-    announce(P.wrong ? '헛응수!' : '피격', 'red');
+    announce(P.feintHit ? '낚였다' : P.wrong ? '헛응수!' : '피격', 'red');
     renderHUD();
     if (S.playerHP <= 0) return die();
     P.chainLeft -= 1;
-    if (P.chainLeft > 0) setPhase('telegraph', Math.max(CFG.telegraphMin, S.telegraphMs * 0.94), { type: chooseAttack(), chainLeft: P.chainLeft });
+    if (P.chainLeft > 0) startTelegraph(P.chainLeft);
     else setPhase('breather', rand(...CFG.breatherMs), { chainLeft: 0 });
   }
 
   function endChain() {
     P.chainLeft -= 1;
-    if (P.chainLeft > 0) setPhase('telegraph', Math.max(CFG.telegraphMin, S.telegraphMs * 0.94), { type: chooseAttack(), chainLeft: P.chainLeft });
+    if (P.chainLeft > 0) startTelegraph(P.chainLeft);
     else setPhase('breather', rand(...CFG.breatherMs), { chainLeft: 0 });
   }
 
@@ -133,21 +238,28 @@
     if (!running || S.dead) return;
     if (P.name === 'stagger') return strike();
     const inTelegraph = P.name === 'telegraph';
-    const inGrace = P.name === 'attack' && P.t <= CFG.graceMs && !P.wrong && !P.responded;
+    const inGrace = P.name === 'attack' && P.t <= CFG.graceMs && !P.wrong && !P.responded && P.committed === null;
     if (inTelegraph || inGrace) {
-      if (P.responded || P.wrong) return;            // 이미 커밋함
+      if (P.responded || P.wrong || P.committed !== null) return;   // 이미 커밋함
+
+      // 페인트 앞구간: 응수는 "커밋"만 된다 — 클래시 없음. 그 정적이 낚임의 공포다
+      if (inTelegraph && P.feint && !P.switched) {
+        P.committed = i;
+        Learn.onRespond(P.t / P.dur);
+        S.playerPose = ['parry', 'jump', 'side'][i]; S.playerPoseT = 0;
+        sfx.commit();
+        return;
+      }
+
       const correct = ATK.indexOf(P.type) === i;
+      if (inTelegraph) Learn.onRespond(P.t / P.dur);
       if (correct) {
         const remain = inTelegraph ? P.dur - P.t : 0;
-        const perfect = remain <= CFG.perfectMs;
-        P.responded = true;
+        const readFeint = P.feint && P.switched;                    // 페인트를 기다렸다 간파
+        const perfect = readFeint || remain <= CFG.perfectMs;
         S.playerPose = ['parry', 'jump', 'side'][i]; S.playerPoseT = 0;
-        fx.slowmo = CFG.slowmo.ms; fx.hitStop = 40; fx.enemyFlash = 0.6;
-        burst(430, P.type === 'low' ? 420 : 300, '#f2f2f5', perfect ? 22 : 12);
-        sfx.clash(perfect);
-        announce(perfect ? '완벽!' : '받아쳤다', perfect ? 'gold' : 'green');
         flashCtl(i, true);
-        setPhase('stagger', CFG.staggerMs, { perfect, chainLeft: P.chainLeft });
+        parrySuccess(perfect, readFeint);
       } else {
         P.wrong = true;
         S.playerPose = ['parry', 'jump', 'side'][i]; S.playerPoseT = 0;
@@ -163,6 +275,19 @@
       sfx.blocked();
       announce('막혔다', 'purple');
     }
+  }
+
+  /* 응수 성공 공통 처리 — 학습 기록 포함 */
+  function parrySuccess(perfect, readFeint) {
+    P.responded = true;
+    Learn.onDefend(P.type, false);
+    if (P.feint) Learn.onFeint(false);
+    if (P.quick) Learn.onQuick(false);
+    fx.slowmo = CFG.slowmo.ms; fx.hitStop = 40; fx.enemyFlash = 0.6;
+    burst(430, P.type === 'low' ? 420 : 300, readFeint ? '#e8c256' : '#f2f2f5', perfect ? 22 : 12);
+    sfx.clash(perfect);
+    announce(readFeint ? '간파!' : perfect ? '완벽!' : '받아쳤다', readFeint || perfect ? 'gold' : 'green');
+    setPhase('stagger', CFG.staggerMs, { perfect, chainLeft: P.chainLeft });
   }
 
   function strike() {
@@ -185,13 +310,24 @@
     setPhase('breather', rand(...CFG.breatherMs), { chainLeft: 0 });
   }
 
+  /* 인터미션 — 놈이 배운 것을 낭독한다 (이 게임의 정체성 화면) */
+  function showIntermission() {
+    running = false;
+    document.getElementById('inter-title').textContent = `결투 ${S.duel} 승리`;
+    document.getElementById('inter-lines').innerHTML =
+      Learn.lines().map(l => `<div class="learn-line">"${l}"</div>`).join('');
+    document.getElementById('ov-inter').classList.remove('hidden');
+  }
+
   function nextDuel() {
+    document.getElementById('ov-inter').classList.add('hidden');
     S.duel += 1;
     S.enemyHP = CFG.enemyHP + Math.floor(S.duel / 2);
     S.telegraphMs = Math.max(CFG.telegraphMin, S.telegraphMs * CFG.telegraphDecay);
     setPhase('breather', 1000, { chainLeft: 0 });
+    running = true;
     renderHUD();
-    hint(`결투 ${S.duel} — 더 빨라진다`);
+    hint(`결투 ${S.duel} — 놈은 더 빠르고, 당신을 더 안다`);
   }
 
   function die() {
@@ -200,6 +336,8 @@
     sfx.lose();
     document.getElementById('dead-stats').textContent =
       `결투 ${S.duel}까지 · 반격 ${S.score.counters}회 (완벽 ${S.score.perfects}) · 피격 ${S.score.hitsTaken}회`;
+    document.getElementById('dead-lines').innerHTML =
+      Learn.lines().map(l => `<div class="learn-line">"${l}"</div>`).join('');
     document.getElementById('ov-dead').classList.remove('hidden');
   }
 
@@ -439,6 +577,8 @@
       ready,
       tension: () => tone(160, { type: 'sine', dur: 0.28, peak: 0.05, slide: 200 }),
       whoosh: () => noise({ dur: 0.14, peak: 0.14, hp: 900 }),
+      commit: () => tone(340, { type: 'sine', dur: 0.07, peak: 0.06 }),
+      feint: () => { tone(900, { type: 'square', dur: 0.06, peak: 0.09 }); tone(600, { type: 'square', dur: 0.08, peak: 0.09, delay: 0.05 }); },
       clash: (perfect) => {
         noise({ dur: 0.1, peak: 0.28, hp: 2400 });
         tone(perfect ? 1650 : 1180, { type: 'square', dur: 0.09, peak: 0.1 });
@@ -476,6 +616,12 @@
 
   document.getElementById('btn-start').onclick = start;
   document.getElementById('btn-retry').onclick = start;
+  document.getElementById('btn-next-duel').onclick = nextDuel;
+  document.querySelectorAll('.btn-forget').forEach(b => b.onclick = () => {
+    Learn.reset();
+    b.textContent = '기억을 지웠다';
+    setTimeout(() => { b.textContent = '놈의 기억 지우기'; }, 1200);
+  });
   document.querySelectorAll('.ctl').forEach(b => {
     b.addEventListener('pointerdown', e => { e.preventDefault(); input(+b.dataset.i); });
   });
@@ -489,14 +635,16 @@
     }
   });
 
-  // 디버그 훅 (자동 검증용 — D2에서 제거)
+  // 디버그 훅 (자동 검증용 — 제출 전 제거)
   window.__duel = {
-    state: () => ({ phase: P.name, type: P.type, t: Math.round(P.t), dur: P.dur, duel: S.duel, pHP: S.playerHP, eHP: S.enemyHP, dead: S.dead, running,
+    state: () => ({ phase: P.name, type: P.type, realType: P.realType, feint: !!P.feint, switched: !!P.switched, quick: !!P.quick,
+      committed: P.committed, t: Math.round(P.t), dur: P.dur, duel: S.duel, pHP: S.playerHP, eHP: S.enemyHP, dead: S.dead, running,
       score: { ...S.score } }),
-    input, start,
+    input, start, nextDuel,
     correctIndex: () => ATK.indexOf(P.type),
     tick: (ms) => { if (running) update(ms); },   // rAF 없이 로직만 전진 (백그라운드 탭 검증용)
-    draw,                                          // rAF 없이 1프레임 렌더 (백그라운드 탭 검증용)
+    draw,
+    learn: () => Learn.raw(), learnLines: () => Learn.lines(), learnReset: () => Learn.reset(),
   };
 
   newSession();
