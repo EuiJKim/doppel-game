@@ -63,11 +63,21 @@
     function onQuick(landed) { L.quicks.tried += 1; if (landed) L.quicks.landed += 1; save(); }
 
     function avgFrac() { return L.fracs.length >= 4 ? L.fracs.reduce((a, b) => a + b, 0) / L.fracs.length : null; }
+    function stdevFrac() {
+      if (L.fracs.length < 4) return null;
+      const m = avgFrac();
+      return Math.sqrt(L.fracs.reduce((a, b) => a + (b - m) ** 2, 0) / L.fracs.length);
+    }
     function failRate(type) { const p = L.perType[type]; return p.n >= 2 ? p.hits / p.n : 0; }
     function weakest() {
       let best = null, bestR = 0.34;
       ATK.forEach(t => { const r = failRate(t); if (L.perType[t].n >= 3 && r > bestR) { bestR = r; best = t; } });
       return best;
+    }
+    /* 그림자가 아는 양 0~1 — 눈빛·윤곽 연출용 */
+    function knowledge() {
+      const defends = ATK.reduce((a, t) => a + L.perType[t].n, 0);
+      return Math.min(1, (defends / 12) * 0.6 + (L.fracs.length / 12) * 0.4);
     }
 
     /* 인터미션·사망 화면용 — 숫자와 함께, 아는 만큼만 (정직 원칙) */
@@ -75,16 +85,20 @@
       const out = [];
       const w = weakest();
       if (w) out.push(`${ATK_KO[w]}에 ${L.perType[w].n}번 중 ${L.perType[w].hits}번 적중 — 계속 노린다.`);
-      const f = avgFrac();
-      if (f !== null && f < 0.55) out.push(`응수가 성급하다 (평균 ${Math.round(f * 100)}% 시점) — 페인트 장전.`);
-      if (f !== null && f > 0.8) out.push(`완벽만 노린다 (평균 ${Math.round(f * 100)}% 시점) — 속공 준비.`);
+      const f = avgFrac(), sd = stdevFrac();
+      if (f !== null && f < 0.5) out.push(`응수가 성급하다 (평균 ${Math.round(f * 100)}% 시점) — 페인트를 그 앞에 건다.`);
+      else if (f !== null && f >= 0.72) out.push(`완벽만 노린다 (평균 ${Math.round(f * 100)}% 시점) — 속공 준비.`);
+      else if (f !== null && sd !== null && sd < 0.12) out.push(`응수 시점이 일정하다 (평균 ${Math.round(f * 100)}%, 편차 ±${Math.round(sd * 100)}%p) — 그 리듬 직후에 칼을 바꾼다.`);
       if (L.feints.tried > 0) out.push(`페인트 ${L.feints.tried}회 중 ${L.feints.landed}회 적중.`);
-      if (!out.length) out.push('…아직 배우는 중이다. 더 싸워라.');
+      if (!out.length) {
+        if (f !== null && sd !== null && sd >= 0.2 && !w) out.push('버릇이 안 잡힌다. …제법인데.');
+        else out.push('…아직 배우는 중이다. 더 싸워라.');
+      }
       return out;
     }
     function reset() { L = fresh(); save(); }
     function raw() { return L; }
-    return { onDefend, onRespond, onFeint, onQuick, avgFrac, failRate, weakest, lines, reset, raw };
+    return { onDefend, onRespond, onFeint, onQuick, avgFrac, stdevFrac, failRate, weakest, knowledge, lines, reset, raw };
   })();
 
   function newSession() {
@@ -112,19 +126,22 @@
     for (let i = 0; i < ATK.length; i++) { if ((r -= weights[i]) <= 0) { pick = ATK[i]; break; } }
     S.lastAtk = pick;
 
-    const plan = { type: pick };
-    const f = Learn.avgFrac();
-    // 성급한 상대 → 페인트 (결투 2부터)
-    if (S.duel >= 2 && f !== null && f < 0.55) {
-      const chance = Math.min(0.45, 0.18 + (0.55 - f));
-      if (Math.random() < chance) {
+    const plan = { type: pick, pickedWeak: pick === Learn.weakest() };
+    const f = Learn.avgFrac(), sd = Learn.stdevFrac();
+    /* 페인트 — 핵심: 전환 시점을 "당신의 습관 시점 + 여유" 뒤에 건다.
+     * 성급하든 중간이든, 습관대로 응수하면 가짜에 커밋된다. 늦게 치는 자(>0.72)만 속공 대상.
+     * 습관이 일정할수록(편차 작음) 확신을 갖고 더 자주 건다 — 흔들리는 자에겐 함부로 안 건다. */
+    if (S.duel >= 2 && f !== null && f < 0.72) {
+      let chance = 0.16 + Math.max(0, 0.5 - f) * 0.5;          // 성급할수록 +
+      if (sd !== null && sd < 0.12) chance += 0.14;             // 일정할수록 +
+      if (Math.random() < Math.min(0.45, chance)) {
         const others = ATK.filter(t => t !== pick);
         plan.feintFrom = others[Math.floor(Math.random() * others.length)];
-        plan.switchFrac = 0.5 + Math.random() * 0.12;
+        plan.switchFrac = Math.min(0.85, Math.max(0.4, f + 0.15));
       }
     }
-    // 완벽충 → 속공 (결투 2부터)
-    if (!plan.feintFrom && S.duel >= 2 && f !== null && f > 0.8 && Math.random() < 0.25) plan.quick = true;
+    // 완벽충 → 속공
+    if (!plan.feintFrom && S.duel >= 2 && f !== null && f >= 0.72 && Math.random() < 0.25) plan.quick = true;
     return plan;
   }
   function chainLen() { return 1 + Math.floor(Math.random() * Math.min(1 + S.duel, 4)); }
@@ -140,10 +157,24 @@
       feint: !!plan.feintFrom,
       switchFrac: plan.switchFrac,
       quick: !!plan.quick,
+      pickedWeak: plan.pickedWeak,
       switched: false, committed: null,
       chainLeft,
     });
     sfx.tension();
+  }
+
+  /* 그림자의 조롱 — 약점을 알고 노렸음을 티낸다 (착취의 가시화) */
+  const TAUNTS = {
+    weakHit: (t) => [`거봐, ${ATK_KO[t]}.`, `${ATK_KO[t]}엔 늘 이러더라.`, `알고 넣었다, ${ATK_KO[t]}.`],
+    feintHit: ['네 리듬은 이미 외웠다.', '그 시점에 움직일 줄 알았다.'],
+  };
+  function taunt(text) {
+    const el = document.getElementById('taunt');
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
   }
 
   /* ── 페이즈 진행 ── */
@@ -191,7 +222,7 @@
             P.wrong = true;                              // 가짜에 속음
             P.feintHit = true;
           }
-          setPhase('attack', CFG.attackMs, { type: P.type, responded: P.responded, wrong: P.wrong, feint: P.feint, feintHit: P.feintHit, quick: P.quick, chainLeft: P.chainLeft });
+          setPhase('attack', CFG.attackMs, { type: P.type, responded: P.responded, wrong: P.wrong, feint: P.feint, feintHit: P.feintHit, quick: P.quick, pickedWeak: P.pickedWeak, chainLeft: P.chainLeft });
           sfx.whoosh();
         }
         break;
@@ -220,6 +251,13 @@
     burst(300, 340, '#e2574f', 14);
     sfx.hit();
     announce(P.feintHit ? '낚였다' : P.wrong ? '헛응수!' : '피격', 'red');
+    // 착취의 가시화 — 알고 때렸음을 말한다
+    if (P.feintHit) {
+      taunt(pickArr(TAUNTS.feintHit));
+      if (!S.feintHintShown) { S.feintHintShown = true; hint('그림자의 페인트 — 전환을 기다렸다 응수하면 간파 (2딜)'); }
+    } else if (P.pickedWeak) {
+      taunt(pickArr(TAUNTS.weakHit(P.type)));
+    }
     renderHUD();
     if (S.playerHP <= 0) return die();
     P.chainLeft -= 1;
@@ -327,7 +365,7 @@
     setPhase('breather', 1000, { chainLeft: 0 });
     running = true;
     renderHUD();
-    hint(`결투 ${S.duel} — 놈은 더 빠르고, 당신을 더 안다`);
+    hint(`결투 ${S.duel} — 그림자는 더 빠르고, 당신을 더 안다`);
   }
 
   function die() {
@@ -367,13 +405,14 @@
     setTimeout(() => b.classList.remove('flash-ok', 'flash-bad'), 350);
   }
   function renderHUD() {
-    document.getElementById('duel-no').textContent = `결투 ${S.duel}`;
+    document.getElementById('duel-no').textContent = `결투 ${S.duel} — 그림자`;
     document.getElementById('enemy-hp').style.width = Math.max(0, 100 * S.enemyHP / (CFG.enemyHP + Math.floor(S.duel / 2))) + '%';
     const hearts = document.getElementById('hearts');
     hearts.innerHTML = Array.from({ length: CFG.playerHP }, (_, i) =>
       `<span class="${i < S.playerHP ? '' : 'lost'}">♥</span>`).join('');
   }
   function rand(a, b) { return a + Math.random() * (b - a); }
+  function pickArr(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
   /* ── 렌더링 (절차적 실루엣) ── */
   function draw() {
@@ -501,7 +540,18 @@
       o = { lean: -0.5 * p, swordA: -0.4, shiftX: 34 * p, crouch: 12 };
     }
     if (P.name === 'duelwon') o = { lean: -0.9, swordA: -1.2, crouch: 40, shiftX: 20 };
-    drawFighter(600, -1, { ...o, color: '#23232c', glow: '#e2574f', flash: fx.enemyFlash, eye: '#e2574f' });
+    // 그림자는 알수록 밝아진다 — 눈빛과 보라 윤곽이 지식량에 비례
+    const k = Learn.knowledge();
+    const fig = drawFighter(600, -1, { ...o, color: '#23232c', glow: '#e2574f', flash: fx.enemyFlash, eye: '#e2574f' });
+    if (k > 0.05) {
+      ctx.save();
+      ctx.globalAlpha = 0.12 + 0.3 * k;
+      ctx.strokeStyle = '#7c6cf0';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#7c6cf0'; ctx.shadowBlur = 8 + 14 * k;
+      ctx.beginPath(); ctx.arc(600 + (o.shiftX || 0), GROUND - 130 + (o.crouch || 0) * 0.5, 58, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
 
     // 반격 창 표시
     if (P.name === 'stagger') {
@@ -620,7 +670,7 @@
   document.querySelectorAll('.btn-forget').forEach(b => b.onclick = () => {
     Learn.reset();
     b.textContent = '기억을 지웠다';
-    setTimeout(() => { b.textContent = '놈의 기억 지우기'; }, 1200);
+    setTimeout(() => { b.textContent = '그림자의 기억 지우기'; }, 1200);
   });
   document.querySelectorAll('.ctl').forEach(b => {
     b.addEventListener('pointerdown', e => { e.preventDefault(); input(+b.dataset.i); });

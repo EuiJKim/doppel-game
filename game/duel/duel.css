@@ -30,6 +30,19 @@ body { display: flex; flex-direction: column; }
 .enemy-hp { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
 .enemy-hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, var(--danger), #f08a72); border-radius: 5px; transition: width 0.18s; }
 .hearts { position: absolute; left: 16px; bottom: 12px; font-size: 24px; color: var(--danger); letter-spacing: 4px; pointer-events: none; }
+
+/* 그림자의 조롱 */
+.taunt {
+  margin-top: 8px; min-height: 20px; font-size: 14px; font-weight: 700; color: var(--danger);
+  font-style: italic; opacity: 0; text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+.taunt.show { animation: tauntIn 1.8s ease both; }
+@keyframes tauntIn {
+  0% { opacity: 0; transform: translateY(-4px); }
+  12% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .hearts .lost { opacity: 0.18; }
 
 .announce {
