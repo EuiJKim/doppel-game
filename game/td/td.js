@@ -43,40 +43,28 @@
       gold: DATA.START_GOLD, lives: DATA.LIVES, waveNo: 0,
       phase: 'build',                     // build | combat | over
       units: [], spawnQueue: [], spawnT: 0,
+      waveLeaks: {}, lastWave: null,
       over: false, won: null,
       stats: { killsBy: {}, leaks: {} },  // 마왕 리포트 재료
     };
     SPOTS.forEach(s => s.tower = null);
     fx = { shots: [], puffs: [], floats: [] };
+    Director.onRunStart(SPOTS);
     renderHUD();
   }
 
-  /* ── 웨이브 편성 — ★ 내일 마왕 디렉터가 이 함수를 교체한다 ── */
-  function composeWave(n) {
-    const pool = ['goblin', 'rat'];
-    if (n >= 3) pool.push('beetle');
-    if (n >= 4) pool.push('wolf');
-    if (n >= 6) pool.push('wraith');
-    if (n >= 7) pool.push('ogre');
-    let budget = DATA.budget(n);
-    const list = [];
-    let guard = 0;
-    while (budget >= 5 && guard++ < 80) {
-      const k = pool[Math.floor(Math.random() * pool.length)];
-      if (DATA.UNITS[k].cost <= budget) { list.push(k); budget -= DATA.UNITS[k].cost; }
-    }
-    return { units: list, gapMs: 480, taunt: null };
-  }
-
+  /* ── 웨이브 시작 — 마왕이 읽고, 선언하고, 실행한다 ── */
   function startWave() {
     if (S.phase !== 'build' || S.over) return;
     S.waveNo += 1;
-    const spec = composeWave(S.waveNo);
+    if (S.waveNo === 3) Director.recordOpener(SPOTS);      // 초반 빌드 성향 기록 (회귀 기억 재료)
+    const spec = Director.compose(S.waveNo, SPOTS, S.lastWave);
     S.spawnQueue = spec.units.slice();
     S.spawnGap = spec.gapMs;
-    S.spawnT = 0;
+    S.spawnT = 1700;                                        // 선언을 읽을 시간 — 선언→실행의 간격
+    S.waveLeaks = {};
     S.phase = 'combat';
-    if (spec.taunt) showTaunt(spec.taunt); else hideTaunt();
+    if (spec.taunt) showTaunt(spec.taunt);
     renderHUD();
     announce(`웨이브 ${S.waveNo}`, 'red');
   }
@@ -126,6 +114,7 @@
         u.dead = true; u.leaked = true;
         S.lives -= u.kind === 'ogre' ? 2 : 1;
         S.stats.leaks[u.kind] = (S.stats.leaks[u.kind] || 0) + 1;
+        S.waveLeaks[u.kind] = (S.waveLeaks[u.kind] || 0) + 1;
         announce('-' + (u.kind === 'ogre' ? 2 : 1) + ' ❤', 'red');
         renderHUD();
         if (S.lives <= 0) return endGame(false);
@@ -175,10 +164,13 @@
 
     // 웨이브 종료
     if (S.phase === 'combat' && !S.spawnQueue.length && !S.units.length) {
+      S.lastWave = { leaks: { ...S.waveLeaks } };
+      Director.onWaveEnd(S.waveLeaks);
       if (S.waveNo >= DATA.WAVES) return endGame(true);
       S.phase = 'build';
-      S.gold += 18 + S.waveNo * 3;      // 웨이브 보너스
-      announce('웨이브 클리어 +' + (18 + S.waveNo * 3) + '💰', 'green');
+      S.gold += 12 + S.waveNo * 2;      // 웨이브 보너스 (유저테스트 후 하향 — 경제가 너무 풍족했음)
+      announce('웨이브 클리어 +' + (12 + S.waveNo * 2) + '💰', 'green');
+      hideTaunt();
       renderHUD();
     }
 
@@ -193,6 +185,7 @@
     if (S.over) return;
     S.over = true; S.won = won; S.phase = 'over';
     running = false;
+    Director.onRunEnd(won, SPOTS, S.stats);
     document.getElementById('end-title').textContent = won ? '마왕 격퇴' : '방어 실패';
     document.getElementById('end-title').className = won ? '' : 'dead-title';
     document.getElementById('end-notes').innerHTML =
@@ -375,14 +368,17 @@
     ['ov-title', 'ov-end', 'ov-memory'].forEach(id => document.getElementById(id).classList.add('hidden'));
     running = true;
     renderPicker();
-    announce('타워를 배치하고 웨이브를 시작하라', 'purple');
+    const opening = Director.openingTaunt();      // 회귀 인사 — 놈은 기억하고 돌아온다
+    if (opening) showTaunt(opening);
+    else announce('타워를 배치하고 웨이브를 시작하라', 'purple');
   }
 
   document.getElementById('btn-start').onclick = start;
   document.getElementById('btn-again').onclick = start;
   document.getElementById('btn-wave').onclick = startWave;
   document.getElementById('btn-memory').onclick = () => {
-    document.getElementById('memory-lines').innerHTML = '<div class="learn-line">"…아직 너를 모른다. 첫 회차를 보여라."</div>';
+    document.getElementById('memory-lines').innerHTML =
+      Director.memoryLines().map(l => `<div class="learn-line">"${l}"</div>`).join('');
     document.getElementById('ov-memory').classList.remove('hidden');
   };
   document.getElementById('btn-memory-close').onclick = () => document.getElementById('ov-memory').classList.add('hidden');
@@ -395,6 +391,9 @@
     start, startWave, tick: (ms) => { if (running && S && !S.over) update(ms); }, draw,
     place: (spotIdx, kind) => { selected = kind; const ok = tryPlace(SPOTS[spotIdx]); selected = null; return ok; },
     spots: () => SPOTS.map(s => ({ i: s.i, x: s.x, y: s.y, tower: s.tower ? s.tower.kind : null })),
+    taunt: () => document.getElementById('taunt-banner').textContent,
+    memory: () => Director.raw(),
+    resetMemory: () => Director.resetMemory(),
   };
 
   renderPicker();
