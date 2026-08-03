@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>?뚭???留덉솗? ?섏쓽 ??뚮? 湲곗뼲?쒕떎</title>
+<title>회귀한 마왕은 나의 타워를 기억한다</title>
 <link rel="stylesheet" href="td.css">
 </head>
 <body>
@@ -11,48 +11,48 @@
 <div class="stage">
   <canvas id="cv" width="900" height="520"></canvas>
 
-  <!-- ?곷떒 HUD -->
+  <!-- 상단 HUD -->
   <div class="hud-top">
-    <span class="stat">?뮥 <b id="gold">110</b></span>
-    <span class="stat">??<b id="lives">10</b></span>
-    <span class="stat">?⑥씠釉?<b id="wave-no">0</b>/10</span>
+    <span class="stat">💰 <b id="gold">110</b></span>
+    <span class="stat">❤ <b id="lives">10</b></span>
+    <span class="stat">웨이브 <b id="wave-no">0</b>/10</span>
   </div>
 
-  <!-- 留덉솗???좎뼵 諛곕꼫 -->
+  <!-- 마왕의 선언 배너 -->
   <div class="taunt-banner" id="taunt-banner"></div>
   <div class="announce" id="announce"></div>
 
-  <!-- ??댄? -->
+  <!-- 타이틀 -->
   <div class="overlay" id="ov-title">
-    <h1>?뚭???留덉솗?<br>?섏쓽 ??뚮? 湲곗뼲?쒕떎</h1>
-    <p class="sub">留덉솗? ????뚮? ?쎄퀬, ?좎뼵?섍퀬, 洹몃?濡??⑤떎.<br>寃⑺눜?대룄 ???덉? 湲곗뼲??媛뽮퀬 ?뚭??쒕떎.</p>
-    <button class="big-btn" id="btn-start">諛⑹뼱 ?쒖옉</button>
-    <button class="ghost-btn" id="btn-memory">留덉솗???뚭?濡?/button>
+    <h1>회귀한 마왕은<br>나의 타워를 기억한다</h1>
+    <p class="sub">마왕은 네 타워를 읽고, 선언하고, 그대로 온다.<br>격퇴해도 — 놈은 기억을 갖고 회귀한다.</p>
+    <button class="big-btn" id="btn-start">방어 시작</button>
+    <button class="ghost-btn" id="btn-memory">마왕의 회귀록</button>
   </div>
 
-  <!-- 寃곌낵 -->
+  <!-- 결과 -->
   <div class="overlay hidden" id="ov-end">
-    <h1 id="end-title">留덉솗 寃⑺눜</h1>
+    <h1 id="end-title">마왕 격퇴</h1>
     <div class="learn-box" id="end-notes"></div>
-    <button class="big-btn" id="btn-again">?ㅼ쓬 ?뚯감</button>
+    <button class="big-btn" id="btn-again">다음 회차</button>
   </div>
 
-  <!-- ?뚭?濡?-->
+  <!-- 회귀록 -->
   <div class="overlay hidden" id="ov-memory">
-    <h1>留덉솗???뚭?濡?/h1>
-    <p class="sub">?덉씠 ?뱀떊??????곸? 寃???/p>
+    <h1>마왕의 회귀록</h1>
+    <p class="sub">놈이 당신에 대해 적은 것 —</p>
     <div class="learn-box" id="memory-lines"></div>
-    <button class="big-btn" id="btn-memory-close">?リ린</button>
+    <button class="big-btn" id="btn-memory-close">닫기</button>
   </div>
 </div>
 
-<!-- ?섎떒: ????쎌빱 + ?⑥씠釉??쒖옉 -->
+<!-- 하단: 타워 픽커 + 웨이브 시작 -->
 <div class="dock">
   <div class="picker" id="picker"></div>
-  <button class="wave-btn" id="btn-wave" disabled>?⑥씠釉??쒖옉</button>
+  <button class="wave-btn" id="btn-wave" disabled>웨이브 시작</button>
 </div>
 
-<!-- 罹먯떆 ?쇳빀 諛⑹?: 諛고룷 ??v ?뚮씪誘명꽣瑜??④퍡 ?щ┛??-->
+<!-- 캐시 혼합 방지: 배포 시 v 파라미터를 함께 올린다 -->
 <script src="data.js?v=0803d"></script>
 <script src="director.js?v=0803d"></script>
 <script src="td.js?v=0803d"></script>
