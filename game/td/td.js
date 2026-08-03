@@ -277,38 +277,51 @@
   function draw() {
     ctx.clearRect(0, 0, W, H);
     const g = ctx.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, 560);
-    g.addColorStop(0, '#16161c'); g.addColorStop(1, '#0c0c10');
+    g.addColorStop(0, '#20202c'); g.addColorStop(1, '#15151c');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // 바닥 격자 (공간감)
+    ctx.strokeStyle = 'rgba(255,255,255,0.035)'; ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-    // 경로
-    ctx.strokeStyle = '#23232d'; ctx.lineWidth = 34; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // 경로 — 침공로는 화면에서 가장 잘 읽혀야 한다
+    ctx.strokeStyle = '#3d3d52'; ctx.lineWidth = 38; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.beginPath(); PATH.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
-    ctx.strokeStyle = '#2c2c38'; ctx.lineWidth = 2; ctx.setLineDash([8, 10]);
+    ctx.strokeStyle = '#2a2a3a'; ctx.lineWidth = 30;
+    ctx.beginPath(); PATH.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    ctx.strokeStyle = '#8b8ba8'; ctx.lineWidth = 2; ctx.setLineDash([10, 12]);
     ctx.beginPath(); PATH.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
     ctx.setLineDash([]);
     // 입구·출구
-    ctx.fillStyle = '#e2574f'; ctx.font = '900 14px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('침공 →', 46, 88);
-    ctx.fillStyle = '#7c6cf0'; ctx.fillText('본진', 862, 462);
+    ctx.font = '900 15px sans-serif'; ctx.textAlign = 'center';
+    ctx.save(); ctx.shadowColor = '#e2574f'; ctx.shadowBlur = 10;
+    ctx.fillStyle = '#ff7a6e'; ctx.fillText('침공 →', 48, 84);
+    ctx.restore();
+    ctx.save(); ctx.shadowColor = '#7c6cf0'; ctx.shadowBlur = 10;
+    ctx.fillStyle = '#a99cff'; ctx.fillText('🏰 본진', 858, 464);
+    ctx.restore();
 
     // 건설 지점
     SPOTS.forEach(sp => {
       if (sp.tower) {
         const def = DATA.TOWERS[sp.tower.kind];
-        if (selected === null) { /* no-op */ }
-        ctx.fillStyle = '#1f1f28';
+        ctx.fillStyle = '#2a2a3a';
         rounded(sp.x - 17, sp.y - 17, 34, 34, 8); ctx.fill();
-        ctx.strokeStyle = def.color; ctx.lineWidth = 2;
+        ctx.strokeStyle = def.color; ctx.lineWidth = 2.5;
         rounded(sp.x - 17, sp.y - 17, 34, 34, 8); ctx.stroke();
         ctx.font = '17px sans-serif'; ctx.textAlign = 'center';
         ctx.fillText(def.icon, sp.x, sp.y + 6);
       } else {
-        ctx.strokeStyle = selected ? 'rgba(124,108,240,0.7)' : '#2a2a33';
-        ctx.lineWidth = selected ? 2 : 1.5;
+        ctx.fillStyle = 'rgba(124,108,240,0.10)';
+        rounded(sp.x - 15, sp.y - 15, 30, 30, 7); ctx.fill();
+        ctx.strokeStyle = selected ? 'rgba(151,136,255,0.95)' : '#4a4a66';
+        ctx.lineWidth = selected ? 2.5 : 1.8;
         ctx.setLineDash([5, 5]);
         rounded(sp.x - 15, sp.y - 15, 30, 30, 7); ctx.stroke();
         ctx.setLineDash([]);
-        if (selected) { ctx.fillStyle = 'rgba(124,108,240,0.5)'; ctx.font = '900 15px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+', sp.x, sp.y + 5); }
+        ctx.fillStyle = selected ? '#b3a7ff' : '#606080';
+        ctx.font = '900 16px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('+', sp.x, sp.y + 5.5);
       }
     });
     // 선택 타워 사거리 미리보기
