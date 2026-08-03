@@ -1,0 +1,136 @@
+/* 도플: 아레나 — 오토배틀러 프로토 */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #101014;
+  --panel: #1a1a21;
+  --line: #2a2a33;
+  --ink: #f2f2f5;
+  --muted: #8b8b98;
+  --accent: #e8c256;
+  --doppel: #7c6cf0;
+  --danger: #e2574f;
+  --ok: #4fc98a;
+}
+html, body {
+  background: var(--bg); color: var(--ink);
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
+  height: 100%; overflow: hidden; user-select: none; touch-action: manipulation;
+}
+body { display: flex; flex-direction: column; }
+
+.stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+#cv { width: 100%; height: 100%; max-width: 960px; object-fit: contain; display: block; }
+
+/* ── 전투 HUD ── */
+.hud { position: absolute; top: 10px; left: 0; right: 0; padding: 0 16px; pointer-events: none; }
+.hp-row { display: flex; align-items: flex-start; gap: 12px; max-width: 760px; margin: 0 auto; }
+.hp { flex: 1; }
+.hp-name { font-size: 12px; font-weight: 800; margin-bottom: 4px; }
+.hp.me .hp-name { color: var(--doppel); }
+.hp.foe { text-align: right; }
+.hp.foe .hp-name { color: var(--danger); }
+.hp-bar { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
+.hp-fill { height: 100%; width: 100%; border-radius: 5px; transition: width 0.22s; }
+.me-fill { background: linear-gradient(90deg, #5a49d6, var(--doppel)); }
+.foe-fill { background: linear-gradient(90deg, var(--danger), #f08a72); float: right; }
+.battle-no { font-size: 12px; font-weight: 800; color: var(--muted); letter-spacing: 0.15em; padding-top: 12px; white-space: nowrap; }
+.my-skills { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+.mini-skill {
+  font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: rgba(124,108,240,0.12); color: var(--doppel); border: 1px solid rgba(124,108,240,0.35);
+}
+.mini-skill.proc { animation: procPulse 0.5s ease; }
+@keyframes procPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,194,86,0.6); }
+  40% { transform: scale(1.15); }
+  100% { transform: scale(1); box-shadow: 0 0 0 8px rgba(232,194,86,0); }
+}
+
+.announce {
+  position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 40px; font-weight: 900; letter-spacing: 0.06em; pointer-events: none;
+  opacity: 0; text-shadow: 0 4px 24px rgba(0,0,0,0.6);
+}
+.announce.pop { animation: annPop 0.7s cubic-bezier(.2,.9,.3,1.2); }
+.announce.gold { color: var(--accent); }
+.announce.purple { color: var(--doppel); }
+.announce.red { color: var(--danger); }
+.announce.green { color: var(--ok); }
+@keyframes annPop {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+  18% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); }
+  30% { transform: translate(-50%,-50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── 오버레이 공통 ── */
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; background: rgba(16,16,20,0.9); backdrop-filter: blur(4px); z-index: 10; padding: 18px; text-align: center;
+  overflow-y: auto;
+}
+.overlay.hidden { display: none; }
+.overlay h1 { font-size: 38px; letter-spacing: 0.1em; }
+.sub { color: var(--muted); font-size: 14px; line-height: 1.7; }
+.big-btn {
+  font-family: inherit; font-size: 17px; font-weight: 800; color: #fff;
+  background: var(--doppel); border: none; border-radius: 14px; padding: 15px 42px; cursor: pointer;
+}
+.big-btn:active { transform: scale(0.96); }
+
+/* ── 드래프트 (선택의 희열 = 이 화면이 심장) ── */
+.foe-preview {
+  background: var(--panel); border: 1px solid rgba(226,87,79,0.4); border-radius: 14px;
+  padding: 12px 22px; font-size: 14px; line-height: 1.6; max-width: 430px;
+}
+.foe-preview b { color: var(--danger); font-size: 16px; }
+.draft-title { letter-spacing: 0.1em; font-weight: 800; color: var(--ink); }
+.draft-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; max-width: 640px; }
+.skill-card {
+  width: 172px; cursor: pointer; text-align: left; font-family: inherit; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 14px;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  animation: cardIn 0.4s cubic-bezier(.2,.9,.3,1.2) both;
+}
+.skill-card:nth-child(2) { animation-delay: 0.08s; }
+.skill-card:nth-child(3) { animation-delay: 0.16s; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(16px) scale(0.92); } }
+.skill-card:hover, .skill-card:active {
+  transform: translateY(-4px); border-color: var(--doppel);
+  box-shadow: 0 8px 28px rgba(124,108,240,0.25);
+}
+.skill-card .sk-icon { font-size: 26px; }
+.skill-card .sk-name { font-size: 15.5px; font-weight: 800; margin: 6px 0 4px; }
+.skill-card .sk-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.skill-card .sk-tag { display: inline-block; margin-top: 8px; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+.skill-card.atk .sk-tag { background: rgba(226,87,79,0.14); color: var(--danger); }
+.skill-card.def .sk-tag { background: rgba(79,201,138,0.14); color: var(--ok); }
+.skill-card.tec .sk-tag { background: rgba(232,194,86,0.14); color: var(--accent); }
+.skill-card.advised { border-color: var(--doppel); }
+.skill-card.advised::after { content: '◑ 분신의 추천'; display: block; margin-top: 6px; font-size: 11px; font-weight: 800; color: var(--doppel); }
+.skill-card.picked { animation: pickedFx 0.45s ease both; }
+@keyframes pickedFx {
+  30% { transform: scale(1.1); border-color: var(--accent); box-shadow: 0 0 0 4px rgba(232,194,86,0.4); }
+  100% { transform: scale(1); opacity: 0.4; }
+}
+.advice {
+  min-height: 20px; font-size: 13px; color: var(--doppel); font-style: italic; max-width: 440px; line-height: 1.6;
+}
+
+/* 결과 노트 */
+.learn-box { display: flex; flex-direction: column; gap: 8px; max-width: 430px; width: 100%; }
+.learn-line {
+  background: rgba(124,108,240,0.08); border-left: 3px solid var(--doppel); border-radius: 0 10px 10px 0;
+  padding: 10px 14px; font-size: 14px; color: var(--ink); text-align: left; line-height: 1.55;
+  animation: lineIn 0.5s ease both;
+}
+.learn-line:nth-child(2) { animation-delay: 0.3s; }
+.learn-line:nth-child(3) { animation-delay: 0.6s; }
+@keyframes lineIn { from { opacity: 0; transform: translateX(-8px); } }
+.dead-title { color: var(--danger); }
+
+@media (max-width: 640px) {
+  .skill-card { width: 46%; min-width: 150px; }
+  .overlay h1 { font-size: 30px; }
+}
