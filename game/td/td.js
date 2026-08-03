@@ -34,9 +34,72 @@
 
   /* ── 상태 ── */
   let S = null;
-  let fx = { shots: [], puffs: [], floats: [] };
+  let fx = { shots: [], puffs: [], floats: [], leakFlash: 0 };
   let selected = null;       // 선택된 타워 타입
+  let sellMode = false;
+  let speed = 1;             // 배속 (1|2)
   let running = false, lastT = 0;
+
+  /* ── 사운드 (WebAudio 합성 — 파일 0개, 발사음은 스로틀) ── */
+  const Sfx = (() => {
+    const KEY = 'td_mute';
+    let ac = null, muted = localStorage.getItem(KEY) === '1', lastShot = 0;
+    const ready = () => {
+      if (muted) return null;
+      if (!ac) { const A = window.AudioContext || window.webkitAudioContext; if (A) ac = new A(); }
+      if (ac && ac.state === 'suspended') ac.resume();
+      return ac;
+    };
+    const tone = (f, { type = 'sine', dur = 0.12, peak = 0.1, slide, delay = 0 } = {}) => {
+      const c = ready(); if (!c) return;
+      const t = c.currentTime + delay;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.05);
+    };
+    const noise = ({ dur = 0.12, peak = 0.12, hp = 0, lp = 8000 } = {}) => {
+      const c = ready(); if (!c) return;
+      const t = c.currentTime;
+      const n = Math.floor(c.sampleRate * dur);
+      const buf = c.createBuffer(1, n, c.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const src = c.createBufferSource(); src.buffer = buf;
+      let node = src;
+      if (hp) { const fl = c.createBiquadFilter(); fl.type = 'highpass'; fl.frequency.value = hp; node.connect(fl); node = fl; }
+      if (lp < 8000) { const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = lp; node.connect(fl); node = fl; }
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      node.connect(g).connect(c.destination); src.start(t);
+    };
+    const shotThrottle = () => { const n = performance.now(); if (n - lastShot < 85) return false; lastShot = n; return true; };
+    return {
+      ready,
+      shot: (kind) => {
+        if (!shotThrottle()) return;
+        if (kind === 'arrow') tone(950, { type: 'triangle', dur: 0.05, peak: 0.05 });
+        else if (kind === 'cannon') { noise({ dur: 0.2, peak: 0.16, lp: 700 }); tone(110, { type: 'sawtooth', dur: 0.18, peak: 0.1, slide: 60 }); }
+        else if (kind === 'mage') tone(1300, { dur: 0.14, peak: 0.05, slide: 1800 });
+        else if (kind === 'sniper') { noise({ dur: 0.08, peak: 0.14, hp: 1800 }); tone(300, { type: 'square', dur: 0.09, peak: 0.08, slide: 140 }); }
+      },
+      kill: () => tone(880, { dur: 0.07, peak: 0.06 }),
+      leak: () => { tone(220, { type: 'sawtooth', dur: 0.25, peak: 0.16, slide: 150 }); },
+      place: () => { tone(520, { dur: 0.08, peak: 0.1 }); tone(780, { dur: 0.1, peak: 0.08, delay: 0.06 }); },
+      sell: () => tone(620, { dur: 0.12, peak: 0.09, slide: 380 }),
+      wave: () => { tone(160, { type: 'sawtooth', dur: 0.35, peak: 0.12, slide: 220 }); tone(240, { type: 'sawtooth', dur: 0.35, peak: 0.08, slide: 330, delay: 0.05 }); },
+      taunt: () => { tone(190, { type: 'square', dur: 0.1, peak: 0.07 }); tone(140, { type: 'square', dur: 0.16, peak: 0.07, delay: 0.09 }); },
+      win: () => [0, 0.1, 0.2].forEach((d, i) => tone([523, 659, 880][i], { dur: 0.25, peak: 0.12, delay: d })),
+      lose: () => [0, 0.15].forEach((d, i) => tone([300, 200][i], { type: 'triangle', dur: 0.5, peak: 0.13, delay: d })),
+      toggle: () => { muted = !muted; localStorage.setItem(KEY, muted ? '1' : '0'); if (!muted) ready(); return muted; },
+      isMuted: () => muted,
+    };
+  })();
 
   function newGame() {
     S = {
@@ -100,6 +163,7 @@
       const p = pointAt(u.dist);
       puff(p.x, p.y, u.color);
       addFloat(p, '+' + u.bounty, '#e8c256');
+      Sfx.kill();
       renderHUD();
     }
   }
@@ -125,6 +189,8 @@
         S.stats.leaks[u.kind] = (S.stats.leaks[u.kind] || 0) + 1;
         S.waveLeaks[u.kind] = (S.waveLeaks[u.kind] || 0) + 1;
         announce('-' + (u.kind === 'ogre' ? 2 : 1) + ' ❤', 'red');
+        fx.leakFlash = 1;
+        Sfx.leak();
         renderHUD();
         if (S.lives <= 0) return endGame(false);
       }
@@ -147,6 +213,7 @@
       });
       if (!best) return;
       t.cd = def.cooldown;
+      Sfx.shot(t.kind);
       const tp = pointAt(best.dist);
       fx.shots.push({ x1: sp.x, y1: sp.y - 14, x2: tp.x, y2: tp.y, life: 140, color: def.color, w: t.kind === 'sniper' ? 4 : 2.4 });
 
@@ -217,15 +284,30 @@
   /* ── 건설 ── */
   function selectTower(kind) {
     selected = selected === kind ? null : kind;
+    if (selected) { sellMode = false; document.getElementById('btn-sell').classList.remove('on'); }
     renderPicker();
   }
   function tryPlace(spot) {
-    if (!selected || spot.tower || S.over) return false;
+    if (!S || S.over) return false;
+    // 판매 모드: 설치된 타워 클릭 → 70% 환불
+    if (sellMode && spot.tower) {
+      const def = DATA.TOWERS[spot.tower.kind];
+      const refund = Math.floor(def.cost * 0.7);
+      S.gold += refund;
+      spot.tower = null;
+      puff(spot.x, spot.y, '#e8c256');
+      addFloat(spot, '+' + refund, '#e8c256');
+      Sfx.sell();
+      renderHUD(); renderPicker();
+      return true;
+    }
+    if (!selected || spot.tower) return false;
     const def = DATA.TOWERS[selected];
     if (S.gold < def.cost) { announce('골드 부족', 'purple'); return false; }
     S.gold -= def.cost;
     spot.tower = { kind: selected, cd: 0 };
     puff(spot.x, spot.y, def.color);
+    Sfx.place();
     renderHUD(); renderPicker();
     return true;
   }
@@ -268,6 +350,7 @@
     const el = document.getElementById('taunt-banner');
     el.textContent = `마왕: "${text}"`;
     el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    Sfx.taunt();
   }
   function hideTaunt() { document.getElementById('taunt-banner').classList.remove('show'); }
   function puff(x, y, color) { fx.puffs.push({ x, y, color, life: 380 }); }
@@ -369,6 +452,14 @@
       ctx.fillText(f.text, f.x, f.y);
       ctx.restore();
     });
+    // 본진 피격 — 붉은 비네트
+    if (fx.leakFlash > 0) {
+      fx.leakFlash = Math.max(0, fx.leakFlash - 0.03);
+      const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.75);
+      vg.addColorStop(0, 'rgba(226,87,79,0)');
+      vg.addColorStop(1, `rgba(226,87,79,${0.35 * fx.leakFlash})`);
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    }
   }
   function rounded(x, y, w, h, r) {
     ctx.beginPath();
@@ -382,7 +473,7 @@
     lastT = t;
     // 어떤 프레임 오류도 렌더 루프를 죽이지 못한다 — 오류는 배지로 노출하고 다음 프레임은 계속
     try {
-      if (running && S && !S.over) update(dt);
+      if (running && S && !S.over) update(dt * speed);
       draw();
     } catch (e) {
       showErrorBadge(e);
@@ -420,6 +511,21 @@
     document.getElementById('ov-memory').classList.remove('hidden');
   };
   document.getElementById('btn-memory-close').onclick = () => document.getElementById('ov-memory').classList.add('hidden');
+  document.getElementById('btn-speed').onclick = () => {
+    speed = speed === 1 ? 2 : 1;
+    const b = document.getElementById('btn-speed');
+    b.textContent = `⏩ ×${speed}`;
+    b.classList.toggle('on', speed === 2);
+  };
+  document.getElementById('btn-sell').onclick = () => {
+    sellMode = !sellMode;
+    if (sellMode) { selected = null; renderPicker(); }
+    document.getElementById('btn-sell').classList.toggle('on', sellMode);
+  };
+  const muteBtn = document.getElementById('btn-mute');
+  muteBtn.textContent = Sfx.isMuted() ? '🔇' : '🔊';
+  muteBtn.onclick = () => { muteBtn.textContent = Sfx.toggle() ? '🔇' : '🔊'; };
+  document.addEventListener('pointerdown', () => Sfx.ready(), { once: true });
 
   // 디버그 훅 (백그라운드 탭 검증용 — 제출 전 제거)
   window.__td = {

@@ -95,6 +95,14 @@ body { display: flex; flex-direction: column; }
 }
 .wave-btn:disabled { opacity: 0.4; cursor: default; }
 .wave-btn:not(:disabled):active { transform: scale(0.96); }
+.util-col { display: flex; flex-direction: column; gap: 4px; }
+.util-btn {
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--muted);
+  padding: 4px 10px;
+}
+.util-btn.on { color: var(--accent); border-color: rgba(232,194,86,0.5); }
+.util-btn:active { transform: scale(0.94); }
 
 @media (max-width: 640px) {
   .tower-btn { width: 76px; font-size: 11px; }
