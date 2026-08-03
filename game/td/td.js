@@ -252,7 +252,7 @@
     Object.entries(DATA.TOWERS).forEach(([k, t]) => {
       const b = document.createElement('button');
       b.className = 'tower-btn' + (selected === k ? ' sel' : '');
-      b.disabled = S.gold < t.cost && selected !== k;
+      b.disabled = !S || (S.gold < t.cost && selected !== k);
       b.innerHTML = `<span class="t-ico">${t.icon}</span>${t.name}<br><span class="t-cost">💰${t.cost}</span>`;
       b.title = t.desc;
       b.onclick = () => selectTower(k);
@@ -380,9 +380,25 @@
   function loop(t) {
     const dt = Math.min(50, t - lastT);
     lastT = t;
-    if (running && S && !S.over) update(dt);
-    draw();
+    // 어떤 프레임 오류도 렌더 루프를 죽이지 못한다 — 오류는 배지로 노출하고 다음 프레임은 계속
+    try {
+      if (running && S && !S.over) update(dt);
+      draw();
+    } catch (e) {
+      showErrorBadge(e);
+    }
     requestAnimationFrame(loop);
+  }
+
+  let errBadgeShown = false;
+  function showErrorBadge(e) {
+    console.error(e);
+    if (errBadgeShown) return;
+    errBadgeShown = true;
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;background:rgba(226,87,79,0.92);color:#fff;font-size:11px;padding:4px 8px;border-radius:6px;max-width:70vw;';
+    d.textContent = '오류: ' + (e && e.message ? e.message : e);
+    document.body.appendChild(d);
   }
 
   function start() {
@@ -416,8 +432,12 @@
     taunt: () => document.getElementById('taunt-banner').textContent,
     memory: () => Director.raw(),
     resetMemory: () => Director.resetMemory(),
+    booted: () => BOOTED,   // 부트스트랩 완주 여부 — 로드 크래시 검증용
   };
 
-  renderPicker();
+  /* 부트스트랩: 렌더 루프를 가장 먼저 살린다 — 이후 어떤 초기화 오류도 검정 화면을 만들 수 없다 */
+  let BOOTED = false;
   requestAnimationFrame(t => { lastT = t; loop(t); });
+  try { renderPicker(); } catch (e) { showErrorBadge(e); }
+  BOOTED = true;
 })();
