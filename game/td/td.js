@@ -56,6 +56,15 @@
   /* ── 웨이브 시작 — 마왕이 읽고, 선언하고, 실행한다 ── */
   function startWave() {
     if (S.phase !== 'build' || S.over) return;
+    // 캐시 혼합 등으로 디렉터가 없어도 게임은 진행되어야 한다 (심사 방어)
+    if (typeof Director === 'undefined') {
+      console.warn('Director 미로드 — 폴백 웨이브');
+      S.waveNo += 1;
+      S.spawnQueue = Array.from({ length: 6 + S.waveNo * 2 }, () => Math.random() < 0.5 ? 'goblin' : 'rat');
+      S.spawnGap = 480; S.spawnT = 600; S.waveLeaks = {}; S.phase = 'combat';
+      renderHUD(); announce(`웨이브 ${S.waveNo}`, 'red');
+      return;
+    }
     S.waveNo += 1;
     if (S.waveNo === 3) Director.recordOpener(SPOTS);      // 초반 빌드 성향 기록 (회귀 기억 재료)
     const spec = Director.compose(S.waveNo, SPOTS, S.lastWave);
