@@ -96,6 +96,8 @@
       taunt: () => { tone(190, { type: 'square', dur: 0.1, peak: 0.07 }); tone(140, { type: 'square', dur: 0.16, peak: 0.07, delay: 0.09 }); },
       scan: () => tone(500, { dur: 0.75, peak: 0.05, slide: 1500 }),
       lock: () => { tone(1250, { type: 'square', dur: 0.05, peak: 0.08 }); tone(1650, { type: 'square', dur: 0.09, peak: 0.09, delay: 0.08 }); },
+      heart: () => { tone(58, { dur: 0.11, peak: 0.2 }); tone(50, { dur: 0.13, peak: 0.16, delay: 0.16 }); },
+      finish: () => { noise({ dur: 0.25, peak: 0.14, lp: 500 }); tone(660, { dur: 0.16, peak: 0.1 }); tone(990, { dur: 0.22, peak: 0.09, delay: 0.09 }); },
       win: () => [0, 0.1, 0.2].forEach((d, i) => tone([523, 659, 880][i], { dur: 0.25, peak: 0.12, delay: d })),
       lose: () => [0, 0.15].forEach((d, i) => tone([300, 200][i], { type: 'triangle', dur: 0.5, peak: 0.13, delay: d })),
       toggle: () => { muted = !muted; localStorage.setItem(KEY, muted ? '1' : '0'); if (!muted) ready(); return muted; },
@@ -105,7 +107,7 @@
 
   function newGame() {
     S = {
-      gold: DATA.START_GOLD, lives: DATA.LIVES, waveNo: 0,
+      gold: DATA.START_GOLD, lives: DATA.LIVES, waveNo: 0, heartT: 0,
       phase: 'build',                     // build | combat | over
       units: [], spawnQueue: [], spawnT: 0,
       waveLeaks: {}, lastWave: null,
@@ -173,7 +175,11 @@
       const p = pointAt(u.dist);
       puff(p.x, p.y, u.color);
       addFloat(p, '+' + u.bounty, '#e8c256');
-      Sfx.kill();
+      // 웨이브 마지막 킬 — 결정타 연출 (금빛 파문 + 전용 사운드, 웨이브 종료를 잠깐 붙잡는다)
+      if (!S.spawnQueue.length && S.units.every(o => o.dead)) {
+        fx.finisher = { until: performance.now() + 700, x: p.x, y: p.y };
+        Sfx.finish();
+      } else Sfx.kill();
       renderHUD();
     }
   }
@@ -261,8 +267,16 @@
       }
     });
 
-    // 웨이브 종료
-    if (S.phase === 'combat' && !S.spawnQueue.length && !S.units.length) {
+    // 위기 심장박동 — 목숨 3 이하 전투 중
+    if (S.phase === 'combat' && S.lives <= 3) {
+      S.heartT -= dt;
+      if (S.heartT <= 0) { S.heartT = 1100; fx.heartAt = now; Sfx.heart(); }
+    }
+
+    // 웨이브 종료 — 결정타 연출이 끝날 때까지 잠깐 붙잡는다
+    if (S.phase === 'combat' && !S.spawnQueue.length && !S.units.length
+        && (!fx.finisher || now >= fx.finisher.until)) {
+      fx.finisher = null;
       S.lastWave = { leaks: { ...S.waveLeaks } };
       Director.onWaveEnd(S.waveLeaks);
       if (S.waveNo >= DATA.WAVES) return endGame(true);
@@ -389,6 +403,7 @@
     const el = document.getElementById('taunt-banner');
     el.textContent = `마왕: "${text}"`;
     el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    fx.impactUntil = performance.now() + 450;    // 선언의 무게 — 화면 흔들림 + 암전 플래시
     Sfx.taunt();
   }
   function hideTaunt() { document.getElementById('taunt-banner').classList.remove('show'); }
@@ -398,6 +413,11 @@
   /* ── 렌더링 ── */
   function draw() {
     ctx.clearRect(0, 0, W, H);
+    // 선언 임팩트 — 화면 흔들림 (450ms, 감쇠)
+    const nowD = performance.now();
+    const shakeRem = fx.impactUntil ? Math.max(0, fx.impactUntil - nowD) / 450 : 0;
+    ctx.save();
+    if (shakeRem > 0) ctx.translate((Math.random() - 0.5) * 9 * shakeRem, (Math.random() - 0.5) * 7 * shakeRem);
     const g = ctx.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, 560);
     g.addColorStop(0, '#20202c'); g.addColorStop(1, '#15151c');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -551,6 +571,22 @@
       ctx.fillText(f.text, f.x, f.y);
       ctx.restore();
     });
+    // 웨이브 결정타 — 금빛 파문
+    if (fx.finisher) {
+      const p = 1 - Math.max(0, fx.finisher.until - nowD) / 700;
+      const a = Math.max(0, 1 - p);
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.strokeStyle = '#e8c256'; ctx.shadowColor = '#e8c256'; ctx.shadowBlur = 14;
+      [0, 0.35].forEach(off => {
+        const pp = Math.max(0, p - off);
+        if (pp <= 0) return;
+        ctx.lineWidth = 3.5 * (1 - pp);
+        ctx.beginPath(); ctx.arc(fx.finisher.x, fx.finisher.y, 12 + pp * 120, 0, Math.PI * 2); ctx.stroke();
+      });
+      ctx.restore();
+    }
+    ctx.restore();   // 흔들림 translate 복원 — 아래 오버레이는 화면 고정
+
     // 본진 피격 — 붉은 비네트
     if (fx.leakFlash > 0) {
       fx.leakFlash = Math.max(0, fx.leakFlash - 0.03);
@@ -558,6 +594,18 @@
       vg.addColorStop(0, 'rgba(226,87,79,0)');
       vg.addColorStop(1, `rgba(226,87,79,${0.35 * fx.leakFlash})`);
       ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    }
+    // 선언 임팩트 — 암전 플래시
+    if (shakeRem > 0) { ctx.fillStyle = `rgba(8,8,14,${0.4 * shakeRem})`; ctx.fillRect(0, 0, W, H); }
+    // 위기 심장박동 — 붉은 맥동 비네트 (목숨 3 이하)
+    if (fx.heartAt) {
+      const hb = Math.max(0, 1 - (nowD - fx.heartAt) / 500);
+      if (hb > 0) {
+        const hv = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.8);
+        hv.addColorStop(0, 'rgba(180,40,50,0)');
+        hv.addColorStop(1, `rgba(180,40,50,${0.28 * hb})`);
+        ctx.fillStyle = hv; ctx.fillRect(0, 0, W, H);
+      }
     }
   }
   function rounded(x, y, w, h, r) {
@@ -640,6 +688,7 @@
     memory: () => Director.raw(),
     resetMemory: () => Director.resetMemory(),
     scan: () => fx.scan ? { t: fx.scan.t, target: fx.scan.target, locked: fx.scan.locked, tauntShown: fx.scan.tauntShown } : null,
+    fx: () => ({ impactUntil: fx.impactUntil || null, heartAt: fx.heartAt || null, finisher: fx.finisher ? { ...fx.finisher } : null }),
     booted: () => BOOTED,   // 부트스트랩 완주 여부 — 로드 크래시 검증용
   };
 
