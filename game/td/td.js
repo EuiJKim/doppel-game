@@ -94,6 +94,8 @@
       sell: () => tone(620, { dur: 0.12, peak: 0.09, slide: 380 }),
       wave: () => { tone(160, { type: 'sawtooth', dur: 0.35, peak: 0.12, slide: 220 }); tone(240, { type: 'sawtooth', dur: 0.35, peak: 0.08, slide: 330, delay: 0.05 }); },
       taunt: () => { tone(190, { type: 'square', dur: 0.1, peak: 0.07 }); tone(140, { type: 'square', dur: 0.16, peak: 0.07, delay: 0.09 }); },
+      scan: () => tone(500, { dur: 0.75, peak: 0.05, slide: 1500 }),
+      lock: () => { tone(1250, { type: 'square', dur: 0.05, peak: 0.08 }); tone(1650, { type: 'square', dur: 0.09, peak: 0.09, delay: 0.08 }); },
       win: () => [0, 0.1, 0.2].forEach((d, i) => tone([523, 659, 880][i], { dur: 0.25, peak: 0.12, delay: d })),
       lose: () => [0, 0.15].forEach((d, i) => tone([300, 200][i], { type: 'triangle', dur: 0.5, peak: 0.13, delay: d })),
       toggle: () => { muted = !muted; localStorage.setItem(KEY, muted ? '1' : '0'); if (!muted) ready(); return muted; },
@@ -133,10 +135,18 @@
     const spec = Director.compose(S.waveNo, SPOTS, S.lastWave);
     S.spawnQueue = spec.units.slice();
     S.spawnGap = spec.gapMs;
-    S.spawnT = 1700;                                        // 선언을 읽을 시간 — 선언→실행의 간격
     S.waveLeaks = {};
     S.phase = 'combat';
-    if (spec.taunt) showTaunt(spec.taunt);
+    if (spec.read) {
+      // 마왕의 시선: 스캔 빔 0.8초 → 위협 타워 락온 0.5초 → 선언 → 1.7초 뒤 실행.
+      // analyze()가 계산한 읽기를 그대로 시각화 — 연출과 실제 판단이 항상 일치한다 (무결성)
+      S.spawnT = 3000;
+      fx.scan = { t: 0, target: spec.read, locked: false, taunt: spec.taunt || null, tauntShown: false };
+      Sfx.scan();
+    } else {
+      S.spawnT = 1700;                                      // 선언을 읽을 시간 — 선언→실행의 간격
+      if (spec.taunt) showTaunt(spec.taunt);
+    }
     renderHUD();
     announce(`웨이브 ${S.waveNo}`, 'red');
   }
@@ -171,6 +181,17 @@
   /* ── 진행 ── */
   function update(dt) {
     const now = performance.now();
+
+    // 마왕의 시선 진행 — 락온 시점에 사운드, 선언은 락온이 눈에 박힌 뒤에
+    if (fx.scan) {
+      fx.scan.t += dt;
+      if (!fx.scan.locked && fx.scan.t >= 800) { fx.scan.locked = true; Sfx.lock(); }
+      if (!fx.scan.tauntShown && fx.scan.t >= 1300) {
+        fx.scan.tauntShown = true;
+        if (fx.scan.taunt) showTaunt(fx.scan.taunt);
+      }
+      if (fx.scan.t >= 3400) fx.scan = null;
+    }
 
     // 스폰
     if (S.phase === 'combat' && S.spawnQueue.length) {
@@ -248,6 +269,7 @@
       S.phase = 'build';
       S.gold += 12 + S.waveNo * 2;      // 웨이브 보너스 (유저테스트 후 하향 — 경제가 너무 풍족했음)
       announce('웨이브 클리어 +' + (12 + S.waveNo * 2) + '💰', 'green');
+      fx.scan = null;
       hideTaunt();
       renderHUD();
     }
@@ -437,6 +459,60 @@
       ctx.restore();
     }
 
+    // 마왕의 시선 — 디렉터의 읽기를 화면으로: 스캔 빔이 훑고, 위협 판정 타워에 락온
+    if (fx.scan) {
+      const sc = fx.scan;
+      if (sc.t < 800) {
+        const x = (sc.t / 800) * W;
+        ctx.save();
+        const bg = ctx.createLinearGradient(x - 90, 0, x, 0);
+        bg.addColorStop(0, 'rgba(226,87,79,0)');
+        bg.addColorStop(1, 'rgba(226,87,79,0.20)');
+        ctx.fillStyle = bg; ctx.fillRect(x - 90, 0, 90, H);
+        ctx.strokeStyle = 'rgba(255,122,110,0.9)'; ctx.lineWidth = 2;
+        ctx.shadowColor = '#e2574f'; ctx.shadowBlur = 14;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        ctx.restore();
+        // 빔이 지나간 타워에 붉은 잔광 — "하나하나 보고 있다"
+        SPOTS.forEach(sp => {
+          if (!sp.tower || sp.x > x) return;
+          const a = Math.max(0, 1 - (x - sp.x) / 260);
+          if (a <= 0) return;
+          ctx.save(); ctx.globalAlpha = a * 0.85;
+          ctx.strokeStyle = '#ff7a6e'; ctx.lineWidth = 2;
+          rounded(sp.x - 20, sp.y - 20, 40, 40, 9); ctx.stroke();
+          ctx.restore();
+        });
+      }
+      if (sc.locked) {
+        const lt = sc.t - 800;
+        const snap = Math.min(1, lt / 220);                       // 바깥에서 조여드는 스냅
+        const pulse = 1 + 0.08 * Math.sin(lt / 110);
+        const fade = sc.t > 3000 ? Math.max(0, 1 - (sc.t - 3000) / 400) : 1;
+        SPOTS.forEach(sp => {
+          if (!sp.tower || sp.tower.kind !== sc.target) return;
+          const rr = (34 - 12 * snap) * pulse;
+          ctx.save(); ctx.globalAlpha = fade;
+          ctx.strokeStyle = '#ff5f52'; ctx.lineWidth = 2.5;
+          ctx.shadowColor = '#e2574f'; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.arc(sp.x, sp.y, rr, 0, Math.PI * 2); ctx.stroke();
+          const b = rr + 6, L = 8;
+          [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([dx, dy]) => {
+            ctx.beginPath();
+            ctx.moveTo(sp.x + dx * b, sp.y + dy * b - dy * L);
+            ctx.lineTo(sp.x + dx * b, sp.y + dy * b);
+            ctx.lineTo(sp.x + dx * b - dx * L, sp.y + dy * b);
+            ctx.stroke();
+          });
+          if (snap >= 1) {
+            ctx.fillStyle = '#ff8d82'; ctx.font = '900 11px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('읽힘', sp.x, sp.y - rr - 12);
+          }
+          ctx.restore();
+        });
+      }
+    }
+
     // 유닛
     const now = performance.now();
     S && S.units.forEach(u => {
@@ -563,6 +639,7 @@
     waveGap: () => S ? S.spawnGap : null,
     memory: () => Director.raw(),
     resetMemory: () => Director.resetMemory(),
+    scan: () => fx.scan ? { t: fx.scan.t, target: fx.scan.target, locked: fx.scan.locked, tauntShown: fx.scan.tauntShown } : null,
     booted: () => BOOTED,   // 부트스트랩 완주 여부 — 로드 크래시 검증용
   };
 

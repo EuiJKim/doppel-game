@@ -65,7 +65,7 @@ const Director = (() => {
     // 빈손 정찰
     if (a.total === 0) {
       return { units: fill(['goblin', 'rat'], Math.min(budget, 40), maxUnitCost),
-        gapMs: 520, taunt: '타워가 없군. …정찰만 보내지. 다음엔 봐주지 않는다.' };
+        gapMs: 520, taunt: '타워가 없군. …정찰만 보내지. 다음엔 봐주지 않는다.', read: null };
     }
 
     // 주력 카운터 선택 — 핑퐁 방지: 카운터 2종 + 혼합 웨이브까지 3로테이션
@@ -125,7 +125,8 @@ const Director = (() => {
 
     lastPrimary = primary;
     lastBuildSig = a.sig;
-    return { units: ordered, gapMs, taunt: taunts.join(' ') };
+    // read: 마왕이 위협으로 판정한 타워 종류 — 엔진이 "마왕의 시선" 연출(스캔→락온)에 그대로 사용
+    return { units: ordered, gapMs, taunt: taunts.join(' '), read: a.top };
   }
 
   function altCounter(a, exclude) {
