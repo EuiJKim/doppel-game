@@ -5,7 +5,8 @@ const DATA = {
   START_GOLD: 110,
   LIVES: 10,
   WAVES: 10,
-  budget: (n) => 46 + 28 * n,          // 마왕의 웨이브 예산 — 하드캡 (유저테스트 후 상향: 도배 빌드가 6목숨 생존했음)
+  /* 마왕의 웨이브 예산 — 하드캡. 6웨이브 이후 증가율 완화 (실플레이 피드백: 7부터 벽) */
+  budget: (n) => n <= 6 ? 46 + 28 * n : 214 + 18 * (n - 6),
 
   TOWERS: {
     arrow: { name: '화살탑', icon: '🏹', cost: 30, range: 120, cooldown: 550, dmg: 6, color: '#e8c256',

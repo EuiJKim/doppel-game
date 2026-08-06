@@ -41,7 +41,8 @@ const Director = (() => {
     let total = 0;
     spots.forEach(s => {
       if (!s.tower) return;
-      const c = DATA.TOWERS[s.tower.kind].cost;
+      // 업그레이드 투자까지 읽는다 — 화살탑을 강화할수록 철갑충이 더 온다 (일관된 읽기)
+      const c = s.tower.invested || DATA.TOWERS[s.tower.kind].cost;
       invest[s.tower.kind] += c; total += c;
     });
     const share = {};
@@ -55,7 +56,9 @@ const Director = (() => {
   /* ── 편성 + 선언 ── */
   function compose(n, spots, lastWave) {
     const a = analyze(spots);
-    let budget = Math.round(DATA.budget(n) * (1 + 0.08 * M.wins));   // 회귀할수록 군비 증강
+    // 군비경쟁은 "마왕이 격퇴당한 횟수(M.losses)"만큼 — 이기는 유저에게만 걸린다.
+    // (버그 수정: 기존엔 지는 유저에게 걸려서 고전할수록 더 어려워졌음)
+    let budget = Math.round(DATA.budget(n) * (1 + 0.08 * M.losses));
     const maxUnitCost = 8 + 4 * n;                                    // 초반부터 오우거 금지
     const taunts = [];
 
@@ -81,8 +84,10 @@ const Director = (() => {
         else { primary = alt; lastAlt = alt; taunts.push(pickLine('switch')); }
       }
     } else lastAlt = null;
-    if (DATA.UNITS[primary].cost > maxUnitCost) primary = DATA.COUNTER[a.top][0];
-    if (DATA.UNITS[primary].cost > maxUnitCost) primary = 'goblin';
+    // 비용 게이트는 선언 "이전"에 — 선언한 유닛이 반드시 실제로 온다 (선언→실행 무결성)
+    let downgraded = false;
+    if (DATA.UNITS[primary].cost > maxUnitCost) { primary = DATA.COUNTER[a.top][0]; }
+    if (DATA.UNITS[primary].cost > maxUnitCost) { primary = DATA.UNITS.ironrat.cost <= maxUnitCost ? 'ironrat' : 'goblin'; downgraded = true; }
 
     // 선언 1: 읽기 근거 (인사이트 ① — 당황의 순간을 예고로 만든다). 상황별 대사 풀에서 비반복 선택
     const READ = {
@@ -92,12 +97,18 @@ const Director = (() => {
       sniper: (c) => [`한방 타워가 ${c}개… 한 발에 한 마리씩만 죽여보든가.`, `큰 한 발이라. 작은 것 스물이면 어쩔 텐가.`, `정밀 사격? 낭비하게 만들어주지.`],
     };
     if (mixedWave) taunts.push(pickLine('mixed'));
+    else if (downgraded) taunts.push(pickFrom('scout', [
+      `네 배치는 다 봤다. 오늘은 정찰이다 — 본대는 다음이다.`,
+      `${DATA.TOWERS[a.top].name}이라… 기억해두지. 지금은 몸풀기다.`,
+      `첫 수부터 패를 깔 수는 없지. 일단 간다.`,
+    ]));
     else if (!taunts.length) taunts.push(pickFrom(reason, READ[reason](a.counts[reason])));
 
-    // 간격: 스플래시 비중 → 산개 / 단일딜 비중 → 밀집
+    // 간격: 스플래시 비중 → 산개 / 단일딜 비중 → 밀집. 단 1웨이브는 정찰 성격 — 전술 자비 (온보딩 절벽 방지)
     let gapMs = 480, spacingNote = null;
-    if (a.share.cannon >= 0.34) { gapMs = 900; spacingNote = '흩어져서 간다.'; }
-    else if (a.share.arrow + a.share.sniper >= 0.55) { gapMs = 150; spacingNote = '한꺼번에 간다.'; }
+    if (n >= 2 && a.share.cannon >= 0.34) { gapMs = 900; spacingNote = '흩어져서 간다.'; }
+    else if (n >= 2 && a.share.arrow + a.share.sniper >= 0.55) { gapMs = 150; spacingNote = '한꺼번에 간다.'; }
+    if (n === 1) budget = Math.round(budget * 0.75);
     if (spacingNote) taunts.push(spacingNote);
 
     // 예산 소비: 혼합 웨이브면 전부 섞고, 아니면 주력 60% + 혼합 40%
@@ -186,7 +197,7 @@ const Director = (() => {
     const dom = dominantMemory(M.domHistory);
     if (dom) out.push(`너는 ${dom.total}판 중 ${dom.n}판을 ${DATA.TOWERS[dom.top].name} 중심으로 짰다. 버릇이다.`);
     if (M.bestLeak) out.push(`${DATA.UNITS[M.bestLeak].name}${nJosa(M.bestLeak && DATA.UNITS[M.bestLeak].name)} 네 방어를 뚫었던 걸 기억한다.`);
-    out.push(`다음 생의 예산 계수: ×${(1 + 0.08 * M.wins).toFixed(2)}`);
+    out.push(`다음 생의 예산 계수: ×${(1 + 0.08 * M.losses).toFixed(2)} (나를 격퇴할수록 오른다)`);
     return out;
   }
 

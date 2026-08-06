@@ -204,12 +204,14 @@
       t.cd -= dt;
       if (t.cd > 0) return;
       const def = DATA.TOWERS[t.kind];
+      const lvMul = 1 + 0.45 * ((t.lv || 1) - 1);          // 강화: 데미지 +45%/Lv
+      const range = def.range * (1 + 0.08 * ((t.lv || 1) - 1));
       // 사거리 내 가장 앞선 유닛
       let best = null;
       S.units.forEach(u => {
         if (u.dead || u.dist < 0) return;
         const p = pointAt(u.dist);
-        if (Math.hypot(p.x - sp.x, p.y - sp.y) <= def.range && (!best || u.dist > best.dist)) best = u;
+        if (Math.hypot(p.x - sp.x, p.y - sp.y) <= range && (!best || u.dist > best.dist)) best = u;
       });
       if (!best) return;
       t.cd = def.cooldown;
@@ -222,19 +224,19 @@
         S.units.forEach(u => {
           if (u.dead || u.dist < 0) return;
           const p = pointAt(u.dist);
-          if (Math.hypot(p.x - tp.x, p.y - tp.y) <= def.splash) damageUnit(u, def.dmg, { by: t.kind });
+          if (Math.hypot(p.x - tp.x, p.y - tp.y) <= def.splash) damageUnit(u, def.dmg * lvMul, { by: t.kind });
         });
       } else if (t.kind === 'mage') {
         S.units.forEach(u => {
           if (u.dead || u.dist < 0) return;
           const p = pointAt(u.dist);
-          if (Math.hypot(p.x - sp.x, p.y - sp.y) <= def.range) {
-            damageUnit(u, def.dmg, { by: t.kind, magic: true });
+          if (Math.hypot(p.x - sp.x, p.y - sp.y) <= range) {
+            damageUnit(u, def.dmg * lvMul, { by: t.kind, magic: true });
             if (!u.slowImmune) { u.slowUntil = now + def.slowMs; u.slowF = 1 - def.slow; }
           }
         });
       } else {
-        damageUnit(best, def.dmg, { by: t.kind });
+        damageUnit(best, def.dmg * lvMul, { by: t.kind });
       }
     });
 
@@ -291,8 +293,7 @@
     if (!S || S.over) return false;
     // 판매 모드: 설치된 타워 클릭 → 70% 환불
     if (sellMode && spot.tower) {
-      const def = DATA.TOWERS[spot.tower.kind];
-      const refund = Math.floor(def.cost * 0.7);
+      const refund = Math.floor((spot.tower.invested || DATA.TOWERS[spot.tower.kind].cost) * 0.7);
       S.gold += refund;
       spot.tower = null;
       puff(spot.x, spot.y, '#e8c256');
@@ -301,11 +302,27 @@
       renderHUD(); renderPicker();
       return true;
     }
+    // 업그레이드: 타입 미선택 상태에서 설치된 타워 클릭 (Lv3까지, 데미지 +45%/Lv)
+    if (!selected && spot.tower) {
+      const t = spot.tower;
+      if (t.lv >= 3) { announce('최대 강화', 'purple'); return false; }
+      const def = DATA.TOWERS[t.kind];
+      const cost = Math.round(def.cost * 0.9 * t.lv);
+      if (S.gold < cost) { announce(`강화 비용 ${cost}💰 부족`, 'purple'); return false; }
+      S.gold -= cost;
+      t.lv += 1;
+      t.invested += cost;
+      puff(spot.x, spot.y, '#e8c256');
+      addFloat(spot, '★ Lv' + t.lv, '#e8c256');
+      Sfx.place();
+      renderHUD(); renderPicker();
+      return true;
+    }
     if (!selected || spot.tower) return false;
     const def = DATA.TOWERS[selected];
     if (S.gold < def.cost) { announce('골드 부족', 'purple'); return false; }
     S.gold -= def.cost;
-    spot.tower = { kind: selected, cd: 0 };
+    spot.tower = { kind: selected, cd: 0, lv: 1, invested: def.cost };
     puff(spot.x, spot.y, def.color);
     Sfx.place();
     renderHUD(); renderPicker();
@@ -394,6 +411,12 @@
         rounded(sp.x - 17, sp.y - 17, 34, 34, 8); ctx.stroke();
         ctx.font = '17px sans-serif'; ctx.textAlign = 'center';
         ctx.fillText(def.icon, sp.x, sp.y + 6);
+        // 강화 레벨 핍
+        const lv = sp.tower.lv || 1;
+        if (lv > 1) {
+          ctx.fillStyle = '#e8c256';
+          for (let i = 0; i < lv - 1; i++) { ctx.beginPath(); ctx.arc(sp.x - 6 + i * 12, sp.y + 23, 2.6, 0, Math.PI * 2); ctx.fill(); }
+        }
       } else {
         ctx.fillStyle = 'rgba(124,108,240,0.10)';
         rounded(sp.x - 15, sp.y - 15, 30, 30, 7); ctx.fill();
@@ -536,6 +559,8 @@
     place: (spotIdx, kind) => { selected = kind; const ok = tryPlace(SPOTS[spotIdx]); selected = null; return ok; },
     spots: () => SPOTS.map(s => ({ i: s.i, x: s.x, y: s.y, tower: s.tower ? s.tower.kind : null })),
     taunt: () => document.getElementById('taunt-banner').textContent,
+    queueKinds: () => S ? S.spawnQueue.slice() : [],
+    waveGap: () => S ? S.spawnGap : null,
     memory: () => Director.raw(),
     resetMemory: () => Director.resetMemory(),
     booted: () => BOOTED,   // 부트스트랩 완주 여부 — 로드 크래시 검증용
