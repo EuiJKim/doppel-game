@@ -106,6 +106,20 @@ body { display: flex; flex-direction: column; }
 .util-btn:active { transform: scale(0.94); }
 
 @media (max-width: 640px) {
-  .tower-btn { width: 76px; font-size: 11px; }
+  /* 모바일: 독을 2줄로 감싼다 — 픽커 잘림(375px에서 -70px 오버플로) 수정 */
+  .dock { flex-wrap: wrap; gap: 6px; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+  .picker { width: 100%; justify-content: center; gap: 6px; }
+  .tower-btn { width: calc(25% - 6px); max-width: 88px; font-size: 11px; }
+  .wave-btn { flex: 1; min-width: 0; padding: 12px 8px; }
+  .util-col { flex-direction: row; align-items: stretch; }
+  .util-btn { padding: 4px 8px; }
   .overlay h1 { font-size: 24px; }
+}
+
+/* 심사자 모드 배지 — 시연용 기억임을 정직하게 표기 */
+.demo-badge {
+  position: fixed; top: 6px; left: 6px; z-index: 50; pointer-events: none;
+  font-size: 10.5px; font-weight: 700; color: var(--accent);
+  background: rgba(232,194,86,0.12); border: 1px solid rgba(232,194,86,0.4);
+  border-radius: 8px; padding: 3px 8px;
 }

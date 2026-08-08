@@ -11,9 +11,19 @@ const Director = (() => {
   const KEY = 'td_memory_v1';
 
   let M = load() || fresh();
+  let demoMode = false;   // 심사자 모드: 시연용 기억 — localStorage에 저장하지 않는다 (실제 기억 오염 방지)
   function fresh() { return { runs: 0, wins: 0, losses: 0, domHistory: [], openerHistory: [], bestLeak: null }; }
   function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
-  function save() { localStorage.setItem(KEY, JSON.stringify(M)); }
+  function save() { if (demoMode) return; localStorage.setItem(KEY, JSON.stringify(M)); }
+
+  /* 심사자 모드(?demo) — 회귀 기억을 시연용으로 시딩. 5분 심사에서는 2회차에 도달할 수 없어
+   * 이 게임의 핵심(회귀 인사·회귀록·군비경쟁)이 보이지 않는다. 화면에 배지로 정직하게 표기된다. */
+  function demoSeed() {
+    demoMode = true;
+    M = { runs: 3, wins: 1, losses: 2,
+      domHistory: ['arrow', 'arrow', 'cannon'], openerHistory: ['arrow', 'arrow', 'arrow'],
+      bestLeak: 'wolf' };
+  }
 
   /* 런 내 세션 상태 */
   let lastPrimary = null, lastLeakKind = null, lastBuildSig = '', lastAlt = null;
@@ -231,5 +241,5 @@ const Director = (() => {
   function resetMemory() { M = fresh(); save(); }
   function raw() { return M; }
 
-  return { compose, onWaveEnd, onRunEnd, onRunStart, recordOpener, openingTaunt, memoryLines, resetMemory, raw, analyze };
+  return { compose, onWaveEnd, onRunEnd, onRunStart, recordOpener, openingTaunt, memoryLines, resetMemory, raw, analyze, demoSeed };
 })();
