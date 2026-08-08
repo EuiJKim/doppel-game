@@ -54,7 +54,7 @@ const Director = (() => {
   }
 
   /* ── 편성 + 선언 ── */
-  function compose(n, spots, lastWave) {
+  function compose(n, spots, lastWave, runStats) {
     const a = analyze(spots);
     // 군비경쟁은 "마왕이 격퇴당한 횟수(M.losses)"만큼 — 이기는 유저에게만 걸린다.
     // (버그 수정: 기존엔 지는 유저에게 걸려서 고전할수록 더 어려워졌음)
@@ -66,6 +66,25 @@ const Director = (() => {
     if (a.total === 0) {
       return { units: fill(['goblin', 'rat'], Math.min(budget, 40), maxUnitCost),
         gapMs: 520, taunt: '타워가 없군. …정찰만 보내지. 다음엔 봐주지 않는다.', read: null };
+    }
+
+    // 웨이브 10 — 마왕 강림. 본체 비용(120)도 예산에서 차감: 공정한 권한 유지.
+    // 호위는 이번 런에서 가장 잘 뚫은 유닛(없으면 현재 빌드의 카운터)이 앞장선다.
+    if (n === DATA.WAVES) {
+      const best = runStats && runStats.leaks && Object.entries(runStats.leaks).sort((x, y) => y[1] - x[1])[0];
+      const escortKind = best ? best[0] : DATA.COUNTER[a.top][0];
+      let gapMs = 480, spacingNote = null;
+      if (a.share.cannon >= 0.34) { gapMs = 900; spacingNote = '흩어져서 간다.'; }
+      else if (a.share.arrow + a.share.sniper >= 0.55) { gapMs = 150; spacingNote = '한꺼번에 간다.'; }
+      const eb = Math.max(0, budget - DATA.UNITS.demonking.cost);
+      const escort = fill([escortKind], Math.round(eb * 0.6), maxUnitCost);
+      const mixPool = Object.keys(DATA.UNITS).filter(k => !DATA.UNITS[k].boss && k !== escortKind && DATA.UNITS[k].cost <= maxUnitCost);
+      escort.push(...fill(mixPool, eb - cost(escort), maxUnitCost));
+      const t = ['아홉 번을 막았군. …인정하지. 마지막은 내가 직접 간다.'];
+      if (best) t.push(`${DATA.UNITS[escortKind].name}${nJosa(DATA.UNITS[escortKind].name)} 앞장선다 — 네게 통했던 놈이다.`);
+      if (spacingNote) t.push(spacingNote);
+      lastPrimary = escortKind;
+      return { units: [...shuffle(escort), 'demonking'], gapMs, taunt: t.join(' '), read: a.top, boss: true };
     }
 
     // 주력 카운터 선택 — 핑퐁 방지: 카운터 2종 + 혼합 웨이브까지 3로테이션
@@ -136,7 +155,7 @@ const Director = (() => {
   }
   function fill(pool, budget, maxCost) {
     const out = []; let b = budget, guard = 0;
-    const ok = pool.filter(k => DATA.UNITS[k].cost <= maxCost);
+    const ok = pool.filter(k => DATA.UNITS[k].cost <= maxCost && !DATA.UNITS[k].boss);
     if (!ok.length) return out;
     while (b >= Math.min(...ok.map(k => DATA.UNITS[k].cost)) && guard++ < 120) {
       const k = ok[Math.floor(Math.random() * ok.length)];

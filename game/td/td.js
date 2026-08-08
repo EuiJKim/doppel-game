@@ -97,6 +97,7 @@
       scan: () => tone(500, { dur: 0.75, peak: 0.05, slide: 1500 }),
       lock: () => { tone(1250, { type: 'square', dur: 0.05, peak: 0.08 }); tone(1650, { type: 'square', dur: 0.09, peak: 0.09, delay: 0.08 }); },
       heart: () => { tone(58, { dur: 0.11, peak: 0.2 }); tone(50, { dur: 0.13, peak: 0.16, delay: 0.16 }); },
+      boss: () => { noise({ dur: 0.4, peak: 0.15, lp: 350 }); tone(85, { type: 'sawtooth', dur: 0.55, peak: 0.16, slide: 42 }); tone(64, { type: 'square', dur: 0.4, peak: 0.1, delay: 0.22 }); },
       finish: () => { noise({ dur: 0.25, peak: 0.14, lp: 500 }); tone(660, { dur: 0.16, peak: 0.1 }); tone(990, { dur: 0.22, peak: 0.09, delay: 0.09 }); },
       win: () => [0, 0.1, 0.2].forEach((d, i) => tone([523, 659, 880][i], { dur: 0.25, peak: 0.12, delay: d })),
       lose: () => [0, 0.15].forEach((d, i) => tone([300, 200][i], { type: 'triangle', dur: 0.5, peak: 0.13, delay: d })),
@@ -134,7 +135,7 @@
     }
     S.waveNo += 1;
     if (S.waveNo === 3) Director.recordOpener(SPOTS);      // 초반 빌드 성향 기록 (회귀 기억 재료)
-    const spec = Director.compose(S.waveNo, SPOTS, S.lastWave);
+    const spec = Director.compose(S.waveNo, SPOTS, S.lastWave, S.stats);
     S.spawnQueue = spec.units.slice();
     S.spawnGap = spec.gapMs;
     S.waveLeaks = {};
@@ -159,8 +160,14 @@
     S.units.push({
       kind, hp: u.hp, maxHp: u.hp, speed: u.speed, armor: u.armor || 0,
       slowImmune: !!u.slowImmune, bounty: u.bounty, r: u.r, color: u.color,
+      boss: !!u.boss,
       dist: -Math.random() * 18, slowUntil: 0, slowF: 1,
     });
+    if (u.boss) {   // 강림 — 마왕 본체 입장
+      announce('마 왕 강 림', 'red');
+      fx.impactUntil = performance.now() + 600;
+      Sfx.boss();
+    }
   }
 
   function damageUnit(u, dmg, opt = {}) {
@@ -212,10 +219,11 @@
       u.dist += u.speed * slow * dt / 1000;
       if (u.dist >= PATH_LEN) {
         u.dead = true; u.leaked = true;
-        S.lives -= u.kind === 'ogre' ? 2 : 1;
+        const leakDmg = DATA.UNITS[u.kind].leak || 1;
+        S.lives -= leakDmg;
         S.stats.leaks[u.kind] = (S.stats.leaks[u.kind] || 0) + 1;
         S.waveLeaks[u.kind] = (S.waveLeaks[u.kind] || 0) + 1;
-        announce('-' + (u.kind === 'ogre' ? 2 : 1) + ' ❤', 'red');
+        announce('-' + leakDmg + ' ❤', 'red');
         fx.leakFlash = 1;
         Sfx.leak();
         renderHUD();
@@ -540,14 +548,25 @@
       const p = pointAt(u.dist);
       const slowed = now < u.slowUntil && !u.slowImmune;
       ctx.save();
+      if (u.boss) {   // 마왕 본체 — 맥동하는 오라 + 이름표
+        ctx.shadowColor = u.color; ctx.shadowBlur = 22 + 6 * Math.sin(now / 160);
+        ctx.strokeStyle = 'rgba(255,110,140,0.5)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, u.r + 7 + 2 * Math.sin(now / 200), 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.fillStyle = u.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, u.r, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
       if (u.armor > 0) { ctx.strokeStyle = '#bfd4e8'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(p.x, p.y, u.r + 2.5, 0, Math.PI * 2); ctx.stroke(); }
       if (slowed) { ctx.strokeStyle = '#6cc4f0'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, u.r + 5.5, 0, Math.PI * 2); ctx.stroke(); }
-      // HP바
-      ctx.fillStyle = '#101014'; ctx.fillRect(p.x - 11, p.y - u.r - 9, 22, 4);
+      // HP바 (마왕은 넓게)
+      const hw = u.boss ? 19 : 11;
+      ctx.fillStyle = '#101014'; ctx.fillRect(p.x - hw, p.y - u.r - 9, hw * 2, 4);
       ctx.fillStyle = u.hp / u.maxHp > 0.4 ? '#4fc98a' : '#e2574f';
-      ctx.fillRect(p.x - 11, p.y - u.r - 9, 22 * Math.max(0, u.hp / u.maxHp), 4);
+      ctx.fillRect(p.x - hw, p.y - u.r - 9, hw * 2 * Math.max(0, u.hp / u.maxHp), 4);
+      if (u.boss) {
+        ctx.fillStyle = '#ff8d9e'; ctx.font = '900 12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('마왕', p.x, p.y - u.r - 14);
+      }
       ctx.restore();
     });
 
