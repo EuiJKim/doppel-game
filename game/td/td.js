@@ -347,8 +347,9 @@
       renderHUD(); renderPicker();
       return true;
     }
-    // 업그레이드: 타입 미선택 상태에서 설치된 타워 클릭 (Lv5까지, 데미지 +45%/Lv) — 돈 부어 키우는 맛
-    if (!selected && spot.tower) {
+    // 업그레이드: 설치된 타워 클릭 = 무조건 강화 시도 (Lv5까지, 데미지 +45%/Lv) — 돈 부어 키우는 맛.
+    // 타워 타입이 선택돼 있어도 동작한다 (설치 후 선택이 유지되므로, 여기서 막으면 강화가 사실상 불가능해진다)
+    if (spot.tower) {
       const t = spot.tower;
       if (t.lv >= 5) { announce('최대 강화', 'purple'); return false; }
       const def = DATA.TOWERS[t.kind];
@@ -363,7 +364,7 @@
       renderHUD(); renderPicker();
       return true;
     }
-    if (!selected || spot.tower) return false;
+    if (!selected) return false;
     const def = DATA.TOWERS[selected];
     if (S.gold < def.cost) { announce('골드 부족', 'purple'); return false; }
     S.gold -= def.cost;
@@ -473,8 +474,8 @@
             ctx.beginPath(); ctx.arc(sp.x - ((lv - 2) * 9) / 2 + i * 9, sp.y + sz / 2 + 6, 2.6, 0, Math.PI * 2); ctx.fill();
           }
         }
-        // 강화 가시화 — 건설 페이즈에 강화 비용 배지 (타입 미선택·비판매 모드일 때 클릭 = 강화)
-        if (S && S.phase === 'build' && !selected && !sellMode && lv < 5) {
+        // 강화 가시화 — 건설 페이즈에 강화 비용 배지 (내 타워 클릭 = 강화, 판매 모드만 예외)
+        if (S && S.phase === 'build' && !sellMode && lv < 5) {
           const upCost = Math.round(def.cost * 0.9 * lv);
           ctx.font = '800 11px sans-serif';
           ctx.fillStyle = S.gold >= upCost ? '#e8c256' : 'rgba(160,160,180,0.55)';
