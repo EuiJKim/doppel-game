@@ -26,10 +26,11 @@
     return { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
   }
 
+  /* 돈타워 밀도 패치: 11 → 18지점 — 도배의 쾌감 */
   const SPOTS = [
-    { x: 300, y: 40 }, { x: 500, y: 40 },
-    { x: 130, y: 190 }, { x: 280, y: 190 }, { x: 430, y: 190 }, { x: 580, y: 190 }, { x: 660, y: 190 },
-    { x: 250, y: 350 }, { x: 400, y: 350 }, { x: 550, y: 350 }, { x: 700, y: 350 },
+    { x: 180, y: 40 }, { x: 300, y: 40 }, { x: 400, y: 40 }, { x: 500, y: 40 }, { x: 620, y: 40 },
+    { x: 60, y: 190 }, { x: 130, y: 190 }, { x: 280, y: 190 }, { x: 430, y: 190 }, { x: 580, y: 190 }, { x: 660, y: 190 }, { x: 760, y: 190 },
+    { x: 100, y: 350 }, { x: 250, y: 350 }, { x: 400, y: 350 }, { x: 550, y: 350 }, { x: 700, y: 350 }, { x: 820, y: 350 },
   ].map((p, i) => ({ ...p, i, tower: null }));
 
   /* ── 상태 ── */
@@ -346,10 +347,10 @@
       renderHUD(); renderPicker();
       return true;
     }
-    // 업그레이드: 타입 미선택 상태에서 설치된 타워 클릭 (Lv3까지, 데미지 +45%/Lv)
+    // 업그레이드: 타입 미선택 상태에서 설치된 타워 클릭 (Lv5까지, 데미지 +45%/Lv) — 돈 부어 키우는 맛
     if (!selected && spot.tower) {
       const t = spot.tower;
-      if (t.lv >= 3) { announce('최대 강화', 'purple'); return false; }
+      if (t.lv >= 5) { announce('최대 강화', 'purple'); return false; }
       const def = DATA.TOWERS[t.kind];
       const cost = Math.round(def.cost * 0.9 * t.lv);
       if (S.gold < cost) { announce(`강화 비용 ${cost}💰 부족`, 'purple'); return false; }
@@ -455,17 +456,29 @@
     SPOTS.forEach(sp => {
       if (sp.tower) {
         const def = DATA.TOWERS[sp.tower.kind];
+        const lv = sp.tower.lv || 1;
+        const sz = 34 + (lv - 1) * 3;              // 강화할수록 커진다 — 돈 부은 게 눈에 보여야 한다
         ctx.fillStyle = '#2a2a3a';
-        rounded(sp.x - 17, sp.y - 17, 34, 34, 8); ctx.fill();
-        ctx.strokeStyle = def.color; ctx.lineWidth = 2.5;
-        rounded(sp.x - 17, sp.y - 17, 34, 34, 8); ctx.stroke();
-        ctx.font = '17px sans-serif'; ctx.textAlign = 'center';
+        rounded(sp.x - sz / 2, sp.y - sz / 2, sz, sz, 8); ctx.fill();
+        ctx.strokeStyle = def.color; ctx.lineWidth = 2.5 + (lv - 1) * 0.4;
+        if (lv >= 5) { ctx.shadowColor = def.color; ctx.shadowBlur = 10; }   // 만렙 오라
+        rounded(sp.x - sz / 2, sp.y - sz / 2, sz, sz, 8); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.font = (17 + (lv - 1) * 1.5) + 'px sans-serif'; ctx.textAlign = 'center';
         ctx.fillText(def.icon, sp.x, sp.y + 6);
         // 강화 레벨 핍
-        const lv = sp.tower.lv || 1;
         if (lv > 1) {
           ctx.fillStyle = '#e8c256';
-          for (let i = 0; i < lv - 1; i++) { ctx.beginPath(); ctx.arc(sp.x - 6 + i * 12, sp.y + 23, 2.6, 0, Math.PI * 2); ctx.fill(); }
+          for (let i = 0; i < lv - 1; i++) {
+            ctx.beginPath(); ctx.arc(sp.x - ((lv - 2) * 9) / 2 + i * 9, sp.y + sz / 2 + 6, 2.6, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        // 강화 가시화 — 건설 페이즈에 강화 비용 배지 (타입 미선택·비판매 모드일 때 클릭 = 강화)
+        if (S && S.phase === 'build' && !selected && !sellMode && lv < 5) {
+          const upCost = Math.round(def.cost * 0.9 * lv);
+          ctx.font = '800 11px sans-serif';
+          ctx.fillStyle = S.gold >= upCost ? '#e8c256' : 'rgba(160,160,180,0.55)';
+          ctx.fillText('⬆' + upCost, sp.x, sp.y - sz / 2 - 5);
         }
       } else {
         ctx.fillStyle = 'rgba(124,108,240,0.10)';

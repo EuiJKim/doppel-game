@@ -20,16 +20,19 @@ const DATA = {
       desc: '한방. 쥐떼에겐 낭비다' },
   },
 
+  /* 돈타워 밀도 패치: 단가·보상 약 40% 인하 + 체력 약 30% 인하 = 같은 예산에 마릿수 1.6배.
+   * "몹이 물결로 쏟아지는" 그림이 목적 — 총 유효체력은 거의 동일하게 유지 */
   UNITS: {
-    goblin: { name: '고블린', cost: 8, hp: 26, speed: 46, armor: 0, bounty: 6, r: 9, color: '#7da45a' },
-    rat:    { name: '쥐떼',   cost: 5, hp: 9,  speed: 62, armor: 0, bounty: 2, r: 6, color: '#9a8f7a' },
+    goblin: { name: '고블린', cost: 5, hp: 18, speed: 46, armor: 0, bounty: 4, r: 9, color: '#7da45a' },
+    rat:    { name: '쥐떼',   cost: 3, hp: 7,  speed: 62, armor: 0, bounty: 1, r: 6, color: '#9a8f7a' },
     /* 사용자 인사이트: "한방 타워 앞의 방어 높고 체력 낮은 몹" — 한방은 오버킬 낭비, 연사는 방어에 막힘 */
-    ironrat:{ name: '철갑 쥐떼', cost: 8, hp: 11, speed: 56, armor: 2, bounty: 3, r: 7, color: '#7a8ba0' },
-    /* 체력 상향(34→40): 강화 Lv3 화살 시대에도 도배 압박 유지. 방어 5는 초반 과잔혹이라 4 유지 */
-    beetle: { name: '철갑충', cost: 14, hp: 40, speed: 38, armor: 4, bounty: 9, r: 10, color: '#5d7a94' },
-    wolf:   { name: '질풍 늑대', cost: 12, hp: 30, speed: 88, armor: 0, bounty: 8, r: 9, color: '#c9c9d4' },
-    ogre:   { name: '오우거', cost: 25, hp: 130, speed: 26, armor: 1, bounty: 18, r: 14, color: '#a4653a', leak: 2 },
-    wraith: { name: '망령',   cost: 18, hp: 58, speed: 50, armor: 0, slowImmune: true, bounty: 12, r: 10, color: '#8f7ad6' },
+    ironrat:{ name: '철갑 쥐떼', cost: 5, hp: 8, speed: 56, armor: 2, bounty: 2, r: 7, color: '#7a8ba0' },
+    /* 방어 5는 초반 과잔혹으로 기각(웨이브 4 전멸), 4 유지.
+     * hp 28은 밀도 1.6배와 중복 버프라 화살 빌드가 웨이브 3 전멸 → 24로 재조정 */
+    beetle: { name: '철갑충', cost: 9, hp: 24, speed: 38, armor: 4, bounty: 6, r: 10, color: '#5d7a94' },
+    wolf:   { name: '질풍 늑대', cost: 8, hp: 21, speed: 88, armor: 0, bounty: 5, r: 9, color: '#c9c9d4' },
+    ogre:   { name: '오우거', cost: 16, hp: 95, speed: 26, armor: 1, bounty: 11, r: 14, color: '#a4653a', leak: 2 },
+    wraith: { name: '망령',   cost: 12, hp: 42, speed: 50, armor: 0, slowImmune: true, bounty: 8, r: 10, color: '#8f7ad6' },
     /* 웨이브 10 전용 — 마왕 본체. boss는 일반 편성 풀에서 제외되고, 비용은 웨이브 10 예산에서 차감(공정한 권한 유지) */
     demonking: { name: '마왕', cost: 120, hp: 420, speed: 28, armor: 3, bounty: 50, r: 17, color: '#c04a6e', boss: true, leak: 5 },
   },

@@ -58,6 +58,7 @@ body { display: flex; flex-direction: column; }
 .overlay h1 { font-size: 30px; line-height: 1.35; letter-spacing: 0.04em; }
 .dead-title { color: var(--danger); }
 .sub { color: var(--muted); font-size: 14px; line-height: 1.7; }
+.hint-line { font-size: 12px; opacity: 0.75; }
 .big-btn {
   font-family: inherit; font-size: 17px; font-weight: 800; color: #fff;
   background: var(--doppel); border: none; border-radius: 14px; padding: 15px 42px; cursor: pointer;

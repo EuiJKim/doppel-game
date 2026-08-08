@@ -59,13 +59,13 @@ const Director = (() => {
     // 군비경쟁은 "마왕이 격퇴당한 횟수(M.losses)"만큼 — 이기는 유저에게만 걸린다.
     // (버그 수정: 기존엔 지는 유저에게 걸려서 고전할수록 더 어려워졌음)
     let budget = Math.round(DATA.budget(n) * (1 + 0.08 * M.losses));
-    const maxUnitCost = 8 + 4 * n;                                    // 초반부터 오우거 금지
+    const maxUnitCost = 5 + 3 * n;                                    // 초반부터 오우거 금지 (밀도 패치 단가 기준)
     const taunts = [];
 
     // 빈손 정찰
     if (a.total === 0) {
-      return { units: fill(['goblin', 'rat'], Math.min(budget, 40), maxUnitCost),
-        gapMs: 520, taunt: '타워가 없군. …정찰만 보내지. 다음엔 봐주지 않는다.', read: null };
+      return { units: fill(['goblin', 'rat'], Math.min(budget, 40), maxUnitCost).slice(0, 7),
+        gapMs: 340, taunt: '타워가 없군. …정찰만 보내지. 다음엔 봐주지 않는다.', read: null };
     }
 
     // 웨이브 10 — 마왕 강림. 본체 비용(120)도 예산에서 차감: 공정한 권한 유지.
@@ -73,9 +73,9 @@ const Director = (() => {
     if (n === DATA.WAVES) {
       const best = runStats && runStats.leaks && Object.entries(runStats.leaks).sort((x, y) => y[1] - x[1])[0];
       const escortKind = best ? best[0] : DATA.COUNTER[a.top][0];
-      let gapMs = 480, spacingNote = null;
-      if (a.share.cannon >= 0.34) { gapMs = 900; spacingNote = '흩어져서 간다.'; }
-      else if (a.share.arrow + a.share.sniper >= 0.55) { gapMs = 150; spacingNote = '한꺼번에 간다.'; }
+      let gapMs = 300, spacingNote = null;
+      if (a.share.cannon >= 0.34) { gapMs = 620; spacingNote = '흩어져서 간다.'; }
+      else if (a.share.arrow + a.share.sniper >= 0.55) { gapMs = 110; spacingNote = '한꺼번에 간다.'; }
       const eb = Math.max(0, budget - DATA.UNITS.demonking.cost);
       const escort = fill([escortKind], Math.round(eb * 0.6), maxUnitCost);
       const mixPool = Object.keys(DATA.UNITS).filter(k => !DATA.UNITS[k].boss && k !== escortKind && DATA.UNITS[k].cost <= maxUnitCost);
@@ -123,24 +123,31 @@ const Director = (() => {
     ]));
     else if (!taunts.length) taunts.push(pickFrom(reason, READ[reason](a.counts[reason])));
 
-    // 간격: 스플래시 비중 → 산개 / 단일딜 비중 → 밀집. 단 1웨이브는 정찰 성격 — 전술 자비 (온보딩 절벽 방지)
-    let gapMs = 480, spacingNote = null;
-    if (n >= 2 && a.share.cannon >= 0.34) { gapMs = 900; spacingNote = '흩어져서 간다.'; }
-    else if (n >= 2 && a.share.arrow + a.share.sniper >= 0.55) { gapMs = 150; spacingNote = '한꺼번에 간다.'; }
-    if (n === 1) budget = Math.round(budget * 0.75);
+    // 간격: 스플래시 비중 → 산개 / 단일딜 비중 → 밀집. 웨이브 1~2는 정찰 성격 — 전술 자비 (온보딩 절벽 방지)
+    // 밀도 패치: 마릿수 1.6배에 맞춰 간격 축소 — 웨이브 길이는 유지하며 화면 밀도만 올린다.
+    // 단 초반(1~2)은 넓은 간격 유지: 물량 배수가 저테크 구간을 압살하지 않도록
+    let gapMs = n <= 2 ? 420 : 300, spacingNote = null;
+    if (n >= 4 && a.share.cannon >= 0.34) { gapMs = 620; spacingNote = '흩어져서 간다.'; }
+    else if (n >= 4 && a.share.arrow + a.share.sniper >= 0.55) { gapMs = 110; spacingNote = '한꺼번에 간다.'; }
+    if (n === 1) budget = Math.round(budget * 0.6);
+    else if (n === 2) budget = Math.round(budget * 0.85);
     if (spacingNote) taunts.push(spacingNote);
 
-    // 예산 소비: 혼합 웨이브면 전부 섞고, 아니면 주력 60% + 혼합 40%
+    // 예산 소비: 혼합 웨이브면 전부 섞고, 아니면 주력 60%(초반은 50%) + 혼합 나머지
+    const primaryShare = n <= 3 ? 0.5 : 0.6;
     let units;
     if (mixedWave) {
       units = fill(Object.keys(DATA.UNITS), budget, maxUnitCost);
     } else {
-      units = fill([primary], Math.round(budget * 0.6), maxUnitCost);
+      units = fill([primary], Math.round(budget * primaryShare), maxUnitCost);
       const mixPool = Object.keys(DATA.UNITS).filter(k => k !== primary && DATA.UNITS[k].cost <= maxUnitCost);
       units.push(...fill(mixPool, budget - cost(units), maxUnitCost));
     }
     // 밀집 러시면 주력을 앞에 몰고, 산개면 섞는다
-    const ordered = gapMs <= 300 ? units.sort((x, y) => (x === primary ? -1 : 0) - (y === primary ? -1 : 0)) : shuffle(units);
+    let ordered = gapMs <= 300 ? units.sort((x, y) => (x === primary ? -1 : 0) - (y === primary ? -1 : 0)) : shuffle(units);
+    // 초반 마릿수 상한 — 밀도 배수(단가 인하)가 저테크 1~2웨이브를 압살하지 않게. 예산 자비와 별개의 안전핀
+    if (n === 1) ordered = ordered.slice(0, 7);
+    else if (n === 2) ordered = ordered.slice(0, 14);
 
     lastPrimary = primary;
     lastBuildSig = a.sig;
