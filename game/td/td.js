@@ -36,6 +36,7 @@
   /* ── 상태 ── */
   let S = null;
   let fx = { shots: [], puffs: [], floats: [], leakFlash: 0 };
+  let lastBuiltSpot = null;   // 마왕 아바타의 건설 페이즈 시선 대상
   let selected = null;       // 선택된 타워 타입
   let sellMode = false;
   let speed = 1;             // 배속 (1|2)
@@ -370,6 +371,7 @@
       S.gold -= cost;
       t.lv += 1;
       t.invested += cost;
+      lastBuiltSpot = spot;                     // 강화도 지켜본다
       puff(spot.x, spot.y, '#e8c256');
       addFloat(spot, '★ Lv' + t.lv, '#e8c256');
       Sfx.place();
@@ -381,6 +383,7 @@
     if (S.gold < def.cost) { announce('골드 부족', 'purple'); return false; }
     S.gold -= def.cost;
     spot.tower = { kind: selected, cd: 0, lv: 1, invested: def.cost };
+    lastBuiltSpot = spot;                       // 마왕의 시선이 최근 공사를 본다
     puff(spot.x, spot.y, def.color);
     Sfx.place();
     renderHUD(); renderPicker();
@@ -652,6 +655,88 @@
         ctx.fillStyle = hv; ctx.fillRect(0, 0, W, H);
       }
     }
+
+    drawAvatar(nowD);   // 마왕 아바타 — 화면 고정, 흔들림 위에
+  }
+
+  /* ── 마왕 아바타 — AI의 얼굴 ──
+   * 시선이 디렉터의 실제 판단 대상을 따라간다: 스캔 빔 → 락온 타워 → 선두 유닛 → 최근 공사.
+   * 연출용 랜덤이 아니라 상태의 시각화 — 선언→실행 무결성 원칙의 연장 */
+  const AV = { x: 840, y: 46, r: 24 };
+  function avatarTarget() {
+    if (fx.scan) {
+      if (!fx.scan.locked) return { x: Math.min(W, (fx.scan.t / 800) * W), y: 260 };
+      const sp = SPOTS.find(s => s.tower && s.tower.kind === fx.scan.target);
+      if (sp) return sp;
+    }
+    if (S && S.phase === 'combat' && S.units.length) {
+      let lead = null;
+      S.units.forEach(u => { if (!u.dead && u.dist > 0 && (!lead || u.dist > lead.dist)) lead = u; });
+      if (lead) return pointAt(lead.dist);
+    }
+    if (lastBuiltSpot) return lastBuiltSpot;
+    return { x: W / 2, y: 270 };
+  }
+  function drawAvatar(nowD) {
+    const t = avatarTarget();
+    const ang = Math.atan2(t.y - AV.y, t.x - AV.x);
+    const px = Math.cos(ang) * 2.6, py = Math.sin(ang) * 2.2;
+    const talking = document.getElementById('taunt-banner').classList.contains('show');
+    const locked = !!(fx.scan && fx.scan.locked);
+    // 깜빡임: 3.4초 주기 끝자락에서 짧게
+    const bp = (nowD % 3400) / 3400;
+    const lid = bp > 0.94 ? Math.sin((bp - 0.94) / 0.06 * Math.PI) : 0;
+    const eyeH = (locked ? 2.4 : 3.6) * (1 - 0.9 * lid);
+
+    // 락온 시선 빔 — 아바타와 락온 마커를 잇는다 (얼굴이 '보고 있다'를 물리적으로 연결)
+    if (locked) {
+      ctx.save(); ctx.globalAlpha = 0.2; ctx.strokeStyle = '#ff5f52'; ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 7]);
+      SPOTS.forEach(sp => {
+        if (!sp.tower || sp.tower.kind !== fx.scan.target) return;
+        ctx.beginPath(); ctx.moveTo(AV.x - 6, AV.y + 8); ctx.lineTo(sp.x, sp.y); ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    ctx.save();
+    // 오라 + 머리
+    ctx.shadowColor = '#c04a6e'; ctx.shadowBlur = locked ? 20 : (talking ? 15 : 9);
+    ctx.fillStyle = '#241722';
+    ctx.beginPath(); ctx.arc(AV.x, AV.y, AV.r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#c04a6e'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(AV.x, AV.y, AV.r, 0, Math.PI * 2); ctx.stroke();
+    // 뿔
+    ctx.fillStyle = '#c04a6e';
+    ctx.beginPath();
+    ctx.moveTo(AV.x - 13, AV.y - 17);
+    ctx.quadraticCurveTo(AV.x - 25, AV.y - 34, AV.x - 7, AV.y - 29);
+    ctx.quadraticCurveTo(AV.x - 10, AV.y - 23, AV.x - 6, AV.y - 20);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(AV.x + 13, AV.y - 17);
+    ctx.quadraticCurveTo(AV.x + 25, AV.y - 34, AV.x + 7, AV.y - 29);
+    ctx.quadraticCurveTo(AV.x + 10, AV.y - 23, AV.x + 6, AV.y - 20);
+    ctx.closePath(); ctx.fill();
+    // 눈 (시선 추적 + 깜빡임, 락온 시 가늘고 진하게)
+    ctx.fillStyle = locked ? '#ff5f52' : '#ff8d9e';
+    [-8.5, 8.5].forEach(dx => {
+      ctx.beginPath(); ctx.ellipse(AV.x + dx, AV.y - 3, 5.2, Math.max(0.4, eyeH), 0, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.fillStyle = '#241722';
+    [-8.5, 8.5].forEach(dx => {
+      ctx.beginPath(); ctx.arc(AV.x + dx + px, AV.y - 3 + py, 1.7, 0, Math.PI * 2); ctx.fill();
+    });
+    // 입 — 선언 중엔 말한다
+    ctx.strokeStyle = '#ff8d9e'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    if (talking) {
+      const open = 1.5 + 2.2 * Math.abs(Math.sin(nowD / 85));
+      ctx.beginPath(); ctx.ellipse(AV.x, AV.y + 11, 4.5, open, 0, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(AV.x - 5, AV.y + 11.5); ctx.quadraticCurveTo(AV.x, AV.y + 9.5, AV.x + 5, AV.y + 11.5); ctx.stroke();
+    }
+    ctx.restore();
   }
   function rounded(x, y, w, h, r) {
     ctx.beginPath();
