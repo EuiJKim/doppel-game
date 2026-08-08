@@ -37,6 +37,10 @@
   let S = null;
   let fx = { shots: [], puffs: [], floats: [], leakFlash: 0 };
   let lastBuiltSpot = null;   // 마왕 아바타의 건설 페이즈 시선 대상
+  /* 잿불 앰비언트 파티클 — 결정론적 파라미터 (성능·재현성) */
+  const EMBERS = Array.from({ length: 12 }, (_, i) => ({
+    x0: (i * 173 + 40) % 880, spd: 0.018 + (i % 5) * 0.007, ph: i * 613,
+  }));
   let selected = null;       // 선택된 타워 타입
   let sellMode = false;
   let speed = 1;             // 배속 (1|2)
@@ -451,21 +455,62 @@
     for (let x = 0; x <= W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
     for (let y = 0; y <= H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-    // 경로 — 침공로는 화면에서 가장 잘 읽혀야 한다
-    ctx.strokeStyle = '#3d3d52'; ctx.lineWidth = 38; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // 잿불 앰비언트 — 마계의 공기 (결정론적 파라미터, 배경 위·경로 아래)
+    const nowA = performance.now();
+    ctx.save();
+    EMBERS.forEach(e => {
+      const y = H + 20 - ((nowA * e.spd + e.ph) % (H + 60));
+      const x = e.x0 + Math.sin(nowA / 1400 + e.ph) * 22;
+      ctx.globalAlpha = 0.10 + 0.12 * Math.abs(Math.sin(nowA / 900 + e.ph));
+      ctx.fillStyle = e.ph % 2 ? '#e8c256' : '#e2574f';
+      ctx.beginPath(); ctx.arc(x, y, 1.6 + (e.ph % 3) * 0.5, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
+
+    // 경로 — 마계 침공로: 붉은 균열 림 + 어두운 노면
+    ctx.save();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.shadowColor = 'rgba(226,87,79,0.55)'; ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#4a2a34'; ctx.lineWidth = 40;
     ctx.beginPath(); PATH.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
-    ctx.strokeStyle = '#2a2a3a'; ctx.lineWidth = 30;
+    ctx.restore();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = '#26232e'; ctx.lineWidth = 30;
     ctx.beginPath(); PATH.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
-    ctx.strokeStyle = '#8b8ba8'; ctx.lineWidth = 2; ctx.setLineDash([10, 12]);
+    ctx.strokeStyle = '#9a8b95'; ctx.lineWidth = 2; ctx.setLineDash([10, 12]);
     ctx.beginPath(); PATH.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
     ctx.setLineDash([]);
-    // 입구·출구
-    ctx.font = '900 15px sans-serif'; ctx.textAlign = 'center';
-    ctx.save(); ctx.shadowColor = '#e2574f'; ctx.shadowBlur = 10;
-    ctx.fillStyle = '#ff7a6e'; ctx.fillText('침공 →', 48, 84);
+
+    // 입구 — 침공 포탈 (회전 소용돌이)
+    ctx.save();
+    const prot = nowA / 550;
+    const pg = ctx.createRadialGradient(16, 110, 2, 16, 110, 22);
+    pg.addColorStop(0, 'rgba(255,122,110,0.5)'); pg.addColorStop(1, 'rgba(124,60,80,0)');
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(16, 110, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff7a6e'; ctx.lineWidth = 2.2; ctx.shadowColor = '#e2574f'; ctx.shadowBlur = 10;
+    [0, 2.1, 4.2].forEach(off => {
+      ctx.beginPath(); ctx.arc(16, 110, 13, prot + off, prot + off + 1.5); ctx.stroke();
+    });
+    ctx.beginPath(); ctx.arc(16, 110, 7, -prot * 1.4, -prot * 1.4 + 2.2); ctx.stroke();
+    ctx.font = '900 14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff7a6e'; ctx.fillText('침공 →', 52, 82);
     ctx.restore();
-    ctx.save(); ctx.shadowColor = '#7c6cf0'; ctx.shadowBlur = 10;
-    ctx.fillStyle = '#a99cff'; ctx.fillText('🏰 본진', 858, 464);
+
+    // 출구 — 본진 요새 (지키는 것에 형태를 준다)
+    ctx.save();
+    ctx.shadowColor = '#7c6cf0'; ctx.shadowBlur = 8;
+    ctx.fillStyle = '#34344c';
+    ctx.fillRect(866, 408, 12, 34);                       // 좌탑
+    ctx.fillRect(892, 408, 12, 34);                       // 우탑
+    ctx.fillRect(862, 420, 46, 22);                       // 성벽
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#454562';
+    [866, 872, 892, 898].forEach(x => ctx.fillRect(x, 403, 5, 6));   // 총안
+    ctx.fillStyle = '#a99cff';
+    ctx.fillRect(884, 396, 2, 14);                        // 깃대
+    ctx.beginPath(); ctx.moveTo(886, 396); ctx.lineTo(898, 400); ctx.lineTo(886, 404); ctx.closePath(); ctx.fill();
+    ctx.font = '900 12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('본진', 885, 456);
     ctx.restore();
 
     // 건설 지점
@@ -582,8 +627,7 @@
         ctx.strokeStyle = 'rgba(255,110,140,0.5)'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(p.x, p.y, u.r + 7 + 2 * Math.sin(now / 200), 0, Math.PI * 2); ctx.stroke();
       }
-      ctx.fillStyle = u.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, u.r, 0, Math.PI * 2); ctx.fill();
+      drawUnitBody(u, p, now);
       ctx.shadowBlur = 0;
       if (u.armor > 0) { ctx.strokeStyle = '#bfd4e8'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(p.x, p.y, u.r + 2.5, 0, Math.PI * 2); ctx.stroke(); }
       if (slowed) { ctx.strokeStyle = '#6cc4f0'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, u.r + 5.5, 0, Math.PI * 2); ctx.stroke(); }
@@ -657,6 +701,123 @@
     }
 
     drawAvatar(nowD);   // 마왕 아바타 — 화면 고정, 흔들림 위에
+  }
+
+  /* ── 유닛 실루엣 — 종류가 형태로 읽혀야 상성이 화면에서 보인다 (전부 코드 렌더) ── */
+  function unitHeading(u) {
+    const a = pointAt(u.dist), b = pointAt(u.dist + 6);
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  }
+  function drawUnitBody(u, p, now) {
+    const r = u.r;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.fillStyle = u.color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.4;
+    switch (u.kind) {
+      case 'rat': case 'ironrat': {
+        ctx.rotate(unitHeading(u));
+        // 꼬리
+        ctx.beginPath(); ctx.moveTo(-r * 1.1, 0); ctx.quadraticCurveTo(-r * 1.9, Math.sin(now / 120 + u.dist) * 3, -r * 2.2, 0);
+        ctx.lineWidth = 1.6; ctx.strokeStyle = u.color; ctx.stroke();
+        // 몸통(물방울) + 귀
+        ctx.beginPath(); ctx.ellipse(0, 0, r * 1.15, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(r * 0.55, -r * 0.55, r * 0.3, 0, Math.PI * 2); ctx.fill();
+        if (u.kind === 'ironrat') {   // 등판 철갑
+          ctx.strokeStyle = '#bfd4e8'; ctx.lineWidth = 2.4;
+          ctx.beginPath(); ctx.ellipse(0, -r * 0.15, r * 0.9, r * 0.55, 0, Math.PI, Math.PI * 2); ctx.stroke();
+        }
+        break;
+      }
+      case 'wolf': {
+        ctx.rotate(unitHeading(u));
+        // 잔상 속도선
+        ctx.strokeStyle = 'rgba(201,201,212,0.35)'; ctx.lineWidth = 1.5;
+        [-0.35, 0.35].forEach(dy => {
+          ctx.beginPath(); ctx.moveTo(-r * 1.4, dy * r * 2); ctx.lineTo(-r * 2.3, dy * r * 2); ctx.stroke();
+        });
+        // 유선형 몸통 (앞이 뾰족)
+        ctx.beginPath();
+        ctx.moveTo(r * 1.5, 0);
+        ctx.quadraticCurveTo(r * 0.2, -r * 0.95, -r * 1.1, -r * 0.45);
+        ctx.lineTo(-r * 0.75, 0);
+        ctx.lineTo(-r * 1.1, r * 0.45);
+        ctx.quadraticCurveTo(r * 0.2, r * 0.95, r * 1.5, 0);
+        ctx.closePath(); ctx.fill();
+        // 귀
+        ctx.beginPath(); ctx.moveTo(r * 0.25, -r * 0.75); ctx.lineTo(r * 0.05, -r * 1.25); ctx.lineTo(-r * 0.25, -r * 0.7); ctx.closePath(); ctx.fill();
+        break;
+      }
+      case 'beetle': {
+        ctx.rotate(unitHeading(u));
+        // 껍질 + 마디선 + 강철 림
+        ctx.beginPath(); ctx.ellipse(0, 0, r * 1.05, r * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#bfd4e8'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * 1.05, r * 0.85, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.stroke();
+        [-0.45, 0.45].forEach(fx2 => {
+          ctx.beginPath(); ctx.moveTo(r * fx2, -r * 0.8); ctx.lineTo(r * fx2, r * 0.8); ctx.stroke();
+        });
+        break;
+      }
+      case 'ogre': {
+        // 어깨 융기 + 큰 몸통 + 머리
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.beginPath(); ctx.arc(0, r * 0.35, r * 0.75, 0, Math.PI); ctx.fill();
+        ctx.fillStyle = u.color;
+        [-0.75, 0.75].forEach(dx => {
+          ctx.beginPath(); ctx.arc(dx * r, -r * 0.35, r * 0.42, 0, Math.PI * 2); ctx.fill();
+        });
+        ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+        break;
+      }
+      case 'wraith': {
+        // 유령: 위 반원 + 물결 밑단, 부유 보브, 반투명
+        const bob = Math.sin(now / 280 + u.dist * 0.05) * 2.5;
+        ctx.translate(0, bob);
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(0, -r * 0.15, r * 0.9, Math.PI, 0);
+        const wob = Math.sin(now / 150) * 2;
+        ctx.quadraticCurveTo(r * 0.9, r * 0.7, r * 0.55, r * 0.75 + wob * 0.3);
+        ctx.quadraticCurveTo(r * 0.3, r * 0.45, 0, r * 0.8 - wob * 0.3);
+        ctx.quadraticCurveTo(-r * 0.3, r * 0.45, -r * 0.55, r * 0.75 + wob * 0.3);
+        ctx.quadraticCurveTo(-r * 0.9, r * 0.7, -r * 0.9, -r * 0.15);
+        ctx.closePath(); ctx.fill();
+        // 눈
+        ctx.globalAlpha = 1; ctx.fillStyle = '#1a1420';
+        [-0.35, 0.35].forEach(dx => {
+          ctx.beginPath(); ctx.arc(dx * r, -r * 0.25, r * 0.14, 0, Math.PI * 2); ctx.fill();
+        });
+        break;
+      }
+      case 'demonking': {
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        // 뿔 2개 + 눈
+        ctx.beginPath(); ctx.moveTo(-r * 0.55, -r * 0.7); ctx.lineTo(-r * 0.95, -r * 1.5); ctx.lineTo(-r * 0.15, -r * 0.9); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(r * 0.55, -r * 0.7); ctx.lineTo(r * 0.95, -r * 1.5); ctx.lineTo(r * 0.15, -r * 0.9); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffd9e0';
+        [-0.35, 0.35].forEach(dx => {
+          ctx.beginPath(); ctx.arc(dx * r, -r * 0.15, r * 0.13, 0, Math.PI * 2); ctx.fill();
+        });
+        break;
+      }
+      default: {   // goblin 등 — 원 + 귀 + 배 음영
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        [-0.6, 0.6].forEach(dx => {
+          ctx.beginPath(); ctx.moveTo(dx * r, -r * 0.5); ctx.lineTo(dx * r * 1.6, -r * 1.15); ctx.lineTo(dx * r * 0.35, -r * 0.85); ctx.closePath(); ctx.fill();
+        });
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.beginPath(); ctx.arc(0, r * 0.3, r * 0.6, 0, Math.PI); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   /* ── 마왕 아바타 — AI의 얼굴 ──
