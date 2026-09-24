@@ -23,21 +23,20 @@ const SeotdaNet = (() => {
     const secure = !/^(localhost|127\.0\.0\.1)$/.test(m[1]);
     return { host: m[1], port: +(m[2] || (secure ? 443 : 80)), path: m[3] || '/', secure };
   }
-  function peerOptions() {
+  const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  /* STUN만으로는 이동통신망(CGNAT)·회사망에서 직접 연결이 안 되는 경우가 많다 → 공개 TURN 릴레이(Open Relay)를 폴백으로 */
+  const TURN = [
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ];
+  function peerOptions(withTurn) {
+    const iceMode = new URLSearchParams(location.search).get('ice');   // ?ice=stun 강제 / ?ice=turn 강제 (디버그용)
+    const useTurn = iceMode === 'turn' ? true : iceMode === 'stun' ? false : !!withTurn;
     return {
       debug: 0,
       ...(customServer() || {}),
-      /* STUN만으로는 이동통신망(CGNAT)·회사망에서 직접 연결이 안 되는 경우가 많다 → 공개 TURN 릴레이(Open Relay)를 폴백으로 */
-      config: {
-        iceServers: [
-          { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-          { urls: 'stun:openrelay.metered.ca:80' },
-          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-          { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        ],
-        iceCandidatePoolSize: 4,
-      },
+      config: { iceServers: useTurn ? STUN.concat(TURN) : STUN, iceCandidatePoolSize: 2 },
     };
   }
 
@@ -73,7 +72,7 @@ const SeotdaNet = (() => {
           if (c.open) { try { c.send({ t: 'hb' }); } catch (e) { } }
         }
       }, 3000);
-      this.peer = new Peer(PREFIX + this.code, peerOptions());
+      this.peer = new Peer(PREFIX + this.code, peerOptions(true));
       this.peer.on('open', () => this.h.onOpen && this.h.onOpen(this.code));
       this.peer.on('error', err => this.h.onError && this.h.onError(errorText(err), err));
       this.peer.on('disconnected', () => { if (!this.closed) setTimeout(() => { try { this.peer.reconnect(); } catch (e) { } }, 1500); });
@@ -93,7 +92,7 @@ const SeotdaNet = (() => {
           const old = this.conns.get(pid);
           if (old && old !== conn) { try { old.close(); } catch (e) { } }
           this.conns.set(pid, conn); this.lastSeen.set(pid, Date.now());
-          const ok = this.h.onJoin(pid, String(msg.name || '').slice(0, 10));
+          const ok = this.h.onJoin(pid, String(msg.name || '').slice(0, 10), String(msg.avatar || '').slice(0, 12));
           if (!ok) { conn.send({ t: 'err', msg: '방이 꽉 찼어요', fatal: true }); setTimeout(() => conn.close(), 300); this.conns.delete(pid); pid = null; return; }
           conn.send({ t: 'welcome', pid, code: this.code });
           return;
@@ -112,14 +111,17 @@ const SeotdaNet = (() => {
 
   /* ── 클라이언트 ── */
   class Client {
-    constructor(code, name, token, h) {
+    constructor(code, name, token, h, avatar) {
+      this.avatar = avatar || '';
       this.code = code; this.name = name; this.token = token; this.h = h;
       this.peer = null; this.conn = null; this.closed = false; this.tries = 0; this.wasOpen = false;
     }
     _status(msg) { this.h.onStatus && this.h.onStatus(msg); }
     connect() {
-      this._status('연결 서버에 접속 중…');
+      /* 1차: STUN만(빠름, 대부분 성공) → 8초 안에 안 열리면 2차: TURN 중계 포함으로 새로 시도 */
+      this._status(this.turn ? '중계 서버를 통해 다시 연결 중…' : '연결 서버에 접속 중…');
       this.lastSeen = Date.now();
+      if (this.hb) clearInterval(this.hb);
       this.hb = setInterval(() => {
         if (this.closed || !this.wasOpen) return;
         if (this.conn && this.conn.open && Date.now() - this.lastSeen > 12000) { this.lastSeen = Date.now(); try { this.conn.close(); } catch (e) { } this._retry(); }
@@ -127,7 +129,7 @@ const SeotdaNet = (() => {
       /* 탭을 닫거나 다른 앱으로 완전히 나갈 때 방장에게 즉시 알린다 */
       this._bye = () => { try { if (this.conn && this.conn.open) this.conn.send({ t: 'bye' }); } catch (e) { } };
       window.addEventListener('pagehide', this._bye);
-      this.peer = new Peer(undefined, peerOptions());
+      this.peer = new Peer(undefined, peerOptions(this.turn));
       this.peer.on('open', () => this._dial());
       this.peer.on('error', err => {
         if (err && err.type === 'peer-unavailable' && this.wasOpen) { this._retry(); return; }
@@ -143,7 +145,7 @@ const SeotdaNet = (() => {
       conn.on('iceStateChanged', st => { if (!opened && (st === 'checking' || st === 'connected')) this._status('방장과 직접 연결 중… (네트워크에 따라 10초 정도 걸릴 수 있어요)'); });
       conn.on('open', () => {
         opened = true; this.wasOpen = true; this.tries = 0;
-        conn.send({ t: 'join', name: this.name, token: this.token });
+        conn.send({ t: 'join', name: this.name, token: this.token, avatar: this.avatar });
         this.h.onOpen && this.h.onOpen();
       });
       conn.on('data', msg => {
@@ -158,10 +160,14 @@ const SeotdaNet = (() => {
         if (opened || this.closed || this.conn !== conn) return;
         try { conn.close(); } catch (e) { }
         if (this.wasOpen) { this._retry(); return; }
-        /* 첫 연결 실패: 한 번 더 시도(시그널링 지연·ICE 실패 대비), 그래도 안 되면 원인별 안내 */
-        if (!this.firstFail) { this.firstFail = 1; this._status('연결이 늦어져 다시 시도 중…'); this._dial(); return; }
+        if (!this.turn) {            // 1차 실패 → TURN 중계 포함해서 피어를 새로 만든다
+          this.turn = true;
+          try { this.peer.destroy(); } catch (e) { }
+          this.connect();
+          return;
+        }
         this.h.onError && this.h.onError('방에 연결하지 못했어요. ① 방 코드가 맞는지 ② 방장 화면이 열려 있는지 ③ 방장과 같은 브라우저의 다른 탭이 아닌지 확인해 주세요. 이동통신망이면 와이파이로 바꿔 보세요.');
-      }, 15000);
+      }, this.turn ? 15000 : 8000);
     }
     _retry() {
       if (this.closed) return;
