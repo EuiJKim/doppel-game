@@ -71,9 +71,29 @@
       /* 내 패가 좋을 때: 땡·특수 = 짧은 팡파르, 광땡 = 긴 팡파르 */
       good: () => { [659, 784, 988].forEach((f, i) => tone(f, 0.18, 'triangle', 0.1, null, i * 0.07)); tone(1318, 0.5, 'triangle', 0.1, null, 0.24); },
       great: () => { [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, 0.35, 'square', 0.05, null, i * 0.09)); [262, 330].forEach((f, i) => tone(f, 1.2, 'sawtooth', 0.04, null, 0.3 + i * 0.05)); },
+      tick: () => tone(1800, 0.05, 'square', 0.05),
+      whoosh: () => tone(900, 0.12, 'triangle', 0.04, 200),
+      coin: (i) => tone(1500 + (i % 4) * 180, 0.12, 'sine', 0.05, 2600),
+      pop: () => tone(500, 0.08, 'square', 0.05, 900),
       ctx: () => ctx,
     };
   })();
+
+  /* ── 숫자 카운트업 (판돈·내 돈) ── */
+  const tweens = new Map();
+  function tweenNum(el, to, ms) {
+    const from = +String(el.dataset.v ?? el.textContent.replace(/[^\d-]/g, '')) || 0;
+    if (from === to) { el.textContent = fmt(to); el.dataset.v = to; return; }
+    if (tweens.has(el)) cancelAnimationFrame(tweens.get(el));
+    const t0 = performance.now();
+    const step = t => {
+      const k = Math.min(1, (t - t0) / (ms || 600)); const e = 1 - Math.pow(1 - k, 3);
+      el.textContent = fmt(Math.round(from + (to - from) * e)); el.dataset.v = to;
+      if (k < 1) tweens.set(el, requestAnimationFrame(step)); else tweens.delete(el);
+    };
+    tweens.set(el, requestAnimationFrame(step));
+  }
+  let streak = 0, renderedTurn = null, armedTurnAt = 0, lastTickSec = -1;
 
   /* ── BGM: 합성 긴장감 루프 (A단조 베이스 + 하이햇 + 패드, 내 차례엔 심장박동) ── */
   const Bgm = (() => {
@@ -137,7 +157,7 @@
       if (p.cards) {
         const used = usedIds && usedIds.includes(p.cards[i]);
         const dim = usedIds && usedIds.length && !used && p.cards.length > 2;
-        const delay = justShown && delayIdx ? ` style="animation-delay:${(delayIdx * 0.35).toFixed(2)}s;opacity:0;animation-fill-mode:both"` : '';
+        const delay = justShown ? ` style="animation-delay:${(0.55 + (delayIdx || 0) * 0.4).toFixed(2)}s;opacity:0;animation-fill-mode:both"` : '';
         s += cardHtml(p.cards[i], size, (isNew ? 'deal' : justShown ? 'flip' : '') + (used ? ' used' : '') + (dim ? ' dim' : '')).replace('<div class="card', `<div${delay} class="card`);
       } else s += backHtml(size, isNew ? 'deal' : '');
     }
@@ -238,7 +258,7 @@
   function receiveView(v) {
     const prev = view; view = v;
     if (v.turnLeft != null) { localDeadline = Date.now() + v.turnLeft; deadlineTotal = v.settings.turnSec * 1000; } else localDeadline = 0;
-    if (v.handNo !== revealedHand) { revealed = new Set(); revealedHand = v.handNo; selected = []; lastCardKey = {}; meCardsKey = ''; $('me-cards').innerHTML = ''; $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); }
+    if (v.handNo !== revealedHand) { revealed = new Set(); revealedHand = v.handNo; selected = []; lastCardKey = {}; meCardsKey = ''; $('me-cards').innerHTML = ''; $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); $('winfx').classList.add('hidden'); $('reaction').classList.add('hidden'); renderedTurn = null; if (prev) banner(`${v.handNo}판`, 'small', v.modeLabel); }
     const me = v.players.find(p => p.id === myId);
     if (prev && prev.handNo === v.handNo) effects(prev, v, me);
     else if (prev && v.handNo !== prev.handNo) { Snd.deal(); }
@@ -299,15 +319,17 @@
       topSeg.classList.remove('hidden');
       topSeg.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); if (!b.onclick) b.onclick = () => { doSettings({ mode: b.dataset.mode }); if (view.phase === 'betting' || view.phase === 'choosing') toast(`다음 판부터 ${E.MODES[b.dataset.mode].label}`); }; });
     } else topSeg.classList.add('hidden');
-    $('pot').textContent = fmt(view.pot);
+    { const pe = $('pot'); const prevPot = +pe.dataset.v || 0; tweenNum(pe, view.pot, 500); if (view.pot > prevPot && prevPot) { pe.classList.remove('tick'); void pe.offsetWidth; pe.classList.add('tick'); } }
 
     /* 상대 자리 */
     const others = view.players.filter(p => p.id !== myId);
     const seats = $('seats');
     seats.className = `seats n${Math.min(others.length, 7)}`;
+    const turnChanged = view.turn !== renderedTurn; renderedTurn = view.turn;
     seats.innerHTML = others.map((p, seatIdx) => {
       const cls = ['seat'];
       if (p.isTurn) cls.push('turn');
+      if (p.isTurn && turnChanged) cls.push('turn-in');
       if (p.folded) cls.push('folded');
       if (!p.connected) cls.push('off');
       if (res && res.winners.includes(p.id)) cls.push('winner');
@@ -365,12 +387,13 @@
     const meBox = $('me');
     meBox.classList.toggle('folded', !!(me && me.folded));
     meBox.classList.toggle('myturn', view.phase === 'betting' && view.turn === myId);
+    if (view.phase === 'betting' && view.turn === myId && turnChanged) { meBox.classList.remove('turn-in'); void meBox.offsetWidth; meBox.classList.add('turn-in'); }
     $('me-name').innerHTML = `<img class="avatar" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${me && me.isDealer ? ' <span class="muted">딜러</span>' : ''}${!me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
     const oldB = meBox.querySelector('.bubble'); if (oldB) oldB.remove();
     if (me) meBox.insertAdjacentHTML('afterbegin', bubbleHtml(me.id));
     Bgm.setTense(view.phase === 'betting' && view.turn === myId);
     renderMyCards(me);
-    $('me-chips').textContent = fmt(me ? me.chips : 0);
+    tweenNum($('me-chips'), me ? me.chips : 0, 700);
     $('me-bet').textContent = me && me.bet ? `· 이번 라운드 ${won(me.bet)}` : (me && me.inHand && me.contrib ? `· 넣은 돈 ${won(me.contrib)}` : '');
 
     /* 행동 버튼 */
@@ -385,6 +408,11 @@
         if (b.dataset.type === 'allin' && !confirm(`남은 ${won(me ? me.chips : 0)} 전부 올인할까요?`)) return;
         ab.querySelectorAll('button').forEach(x => x.disabled = true); doAction(b.dataset.type);
       });
+      if (armedTurnAt !== view.turnAt) {
+        armedTurnAt = view.turnAt; const at = view.turnAt;
+        ab.querySelectorAll('button').forEach((b, i) => { b.classList.add('arming'); b.style.transitionDelay = (i * 60) + 'ms'; });
+        setTimeout(() => { if (view && view.turnAt === at) ab.querySelectorAll('button').forEach(b => b.classList.remove('arming')); }, 520);
+      }
     } else if (view.phase === 'choosing') {
       if (view.needChoose) {
         ab.innerHTML = `<button class="btn call" id="btn-choose" ${selected.length === 2 ? '' : 'disabled'}>이 2장으로 확정${selected.length === 2 ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
@@ -408,6 +436,7 @@
       if ($('mode-seg')) $('mode-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); b.onclick = () => doSettings({ mode: b.dataset.mode }); });
     }
 
+    animateDeals();
     /* 결과 패널 · 재참가 안내 */
     if (view.phase === 'result' && res) renderResult(me);
     if (me && me.canRebuy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rebuy').classList.remove('hidden'); }
@@ -437,6 +466,7 @@
       const h = me.best && me.best.length === 2 ? R.evalHand(me.best) : R.bestPair(pool).hand;
       if (h.tier === '광땡') { Snd.great(); mh.classList.add('glow'); confetti(30); try { navigator.vibrate && navigator.vibrate([80, 40, 120]); } catch (e) { } }
       else if (h.tier === '땡' || h.tier === '특수' || h.special) { Snd.good(); mh.classList.add('glow'); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
+      reaction(h);
     }
     if (key !== meCardsKey && peekActive) peekPending = true;   // 쪼는 중엔 카드 DOM을 갈아끼우지 않는다
     else if (key !== meCardsKey) {
@@ -553,6 +583,68 @@
     const dx = (b.left + b.width / 2) - (a.left + a.width / 2), dy = (b.top + b.height / 2) - (a.top + a.height / 2);
     el.animate([{ transform: 'translate(-50%,-50%) scale(1)' }, { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.8)`, opacity: 0.9 }], { duration: 520, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => el.remove();
   }
+  /* 덱(판돈 자리)에서 각 자리로 카드가 날아간다 */
+  function animateDeals() {
+    const targets = [...document.querySelectorAll('#screen-table .card.deal:not([data-flown])')];
+    if (!targets.length) return;
+    const fx = $('fx'); const fr = fx.getBoundingClientRect(); const src = $('pot-box').getBoundingClientRect();
+    const sx = src.left + src.width / 2 - fr.left, sy = src.top + src.height / 2 - fr.top;
+    targets.forEach((el, i) => {
+      el.dataset.flown = '1'; el.classList.remove('deal'); el.style.visibility = 'hidden';
+      const r = el.getBoundingClientRect(); if (!r.width) { el.style.visibility = ''; return; }
+      const fly = document.createElement('div'); fly.className = 'card-fly'; fly.innerHTML = CARDS.BACK;
+      fly.style.left = sx + 'px'; fly.style.top = sy + 'px'; fly.style.width = r.width + 'px'; fly.style.height = r.height + 'px';
+      fx.appendChild(fly);
+      const dx = r.left + r.width / 2 - fr.left - sx, dy = r.top + r.height / 2 - fr.top - sy;
+      const anim = fly.animate([
+        { transform: 'translate(-50%,-50%) rotate(-20deg) scale(.7)', opacity: 0.9 },
+        { transform: `translate(calc(-50% + ${dx * 0.6}px), calc(-50% + ${dy * 0.6 - 30}px)) rotate(8deg) scale(1.05)`, opacity: 1, offset: 0.6 },
+        { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(0) scale(1)`, opacity: 1 },
+      ], { duration: 460, delay: i * 110, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'both' });
+      setTimeout(() => Snd.whoosh(), i * 110);
+      const land = () => { fly.remove(); if (el.style.visibility === 'hidden') { el.style.visibility = ''; el.classList.add('landed'); } };
+      anim.onfinish = land;
+      setTimeout(land, 460 + i * 110 + 250);   // 애니메이션 이벤트가 안 와도(백그라운드 탭 등) 카드는 반드시 보이게
+    });
+  }
+  function actPop(pid, type, text) {
+    const host = seatEl(pid); if (!host) return;
+    host.querySelectorAll('.act-pop').forEach(e => e.remove());
+    const el = document.createElement('div'); el.className = 'act-pop ' + (type === 'die' ? 'die' : type === 'allin' ? 'allin' : (type === 'check' || type === 'call') ? '' : 'raise'); el.textContent = text;
+    host.appendChild(el); setTimeout(() => el.remove(), 1400);
+  }
+  /* 내 패 리액션: 화면에 크게 (나에게만 보인다) */
+  function reactionText(text, cls) {
+    const el = $('reaction'); el.className = 'reaction ' + (cls || ''); el.textContent = text; el.classList.remove('hidden'); void el.offsetWidth;
+    clearTimeout(reactionText.t); reactionText.t = setTimeout(() => el.classList.add('hidden'), 2500);
+  }
+  function reaction(h) {
+    if (h.tier === '광땡') reactionText('대박!!! ' + h.name, 'great');
+    else if (h.tier === '땡') reactionText(h.score >= 908 ? '어이구 좋다~ ' + h.name : '어이구 좋다~', '');
+    else if (h.special === '땡잡이' || h.special === '암행어사') reactionText('오~ ' + h.special + '!', 'ok');
+    else if (h.tier === '특수') reactionText('오~ 괜찮은데?', 'ok');
+    else if (h.score >= 707) reactionText('먹을 만하네', 'ok');
+    else if (h.score <= 702) reactionText(h.score === 700 ? '…망통이다' : '…망했다', 'bad');
+    else reactionText('음… 애매하네', 'bad');
+  }
+  /* 승리 연출: 승리! + 딴 돈 카운트업 + 동전 비 + 연승 */
+  function celebrate(net, big, handName) {
+    const el = $('winfx'); el.className = 'winfx';
+    el.innerHTML = `<div class="w-title">${big ? '대박 승리!' : '승리!'}</div><div class="w-amount">+0원</div><div class="w-sub">${esc(handName || '모두 다이')}</div>${streak >= 2 ? `<div class="w-streak">🔥 ${streak}연승!</div>` : ''}`;
+    void el.offsetWidth;
+    const amt = el.querySelector('.w-amount'); const t0 = performance.now(); const dur = 1200;
+    const step = t => { const k = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - k, 3); amt.textContent = '+' + fmt(Math.round(net * e)) + '원'; if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+    const n = Math.min(60, 16 + Math.floor(net / 400));
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('div'); c.className = 'coin';
+      c.style.left = (5 + Math.random() * 90) + '%'; c.style.animationDuration = (1.4 + Math.random() * 1.2) + 's'; c.style.animationDelay = (Math.random() * 1.2) + 's';
+      $('fx').appendChild(c); setTimeout(() => c.remove(), 3200);
+      if (i % 3 === 0) setTimeout(() => Snd.coin(i), 200 + i * 60);
+    }
+    try { navigator.vibrate && navigator.vibrate(big ? [60, 40, 60, 40, 160] : [40, 30, 90]); } catch (e) { }
+    setTimeout(() => el.classList.add('hidden'), 3300);
+  }
   function banner(text, cls, sub) {
     const b = $('banner'); b.className = 'banner ' + (cls || ''); b.innerHTML = esc(text) + (sub ? `<span class="sub">${esc(sub)}</span>` : '');
     b.classList.remove('hidden'); void b.offsetWidth;
@@ -582,8 +674,20 @@
       if (p.folded && !q.folded) { Snd.die(); say(p.id, 'die'); }
     }
     if (anyBet) { Snd.chip(); $('pot-box').classList.remove('bump'); void $('pot-box').offsetWidth; $('pot-box').classList.add('bump'); }
-    /* 새 카드 */
-    if (v.street !== prev.street) Snd.deal();
+    /* 행동 팝업 */
+    if (v.lastAction && v.lastAction.n !== (prev.lastAction ? prev.lastAction.n : 0)) {
+      const a = v.lastAction; const label = E.ACTION_LABEL[a.type] || a.type;
+      setTimeout(() => actPop(a.id, a.type, label + (a.amount && a.type !== 'die' && a.type !== 'check' ? ` ${fmt(a.amount)}` : (a.type === 'die' ? '' : '!'))), 0);
+      if (a.type !== 'die' && a.type !== 'check') Snd.pop();
+    }
+    /* 단계 전환 배너 */
+    if (v.street !== prev.street && v.phase !== 'result') {
+      const holdemReveal = v.mode === 'holdem' && prev.board[0] == null && v.board[0] != null;
+      if (holdemReveal) { banner('공유 카드 공개!', 'gold small'); Snd.reveal(); }
+      else if (v.mode === '2' && v.street === 2) banner('두 번째 장', 'small');
+      else if (v.mode === '3' && v.street === 2) banner('세 번째 장', 'small');
+    }
+    if (v.phase === 'choosing' && prev.phase !== 'choosing') banner(v.needChoose ? '2장을 고르세요' : '패 선택 중', 'small');
     /* 내 차례 */
     if (v.phase === 'betting' && v.turn === myId && (prev.turn !== myId || prev.phase !== 'betting')) Snd.turn();
     if (v.phase === 'choosing' && prev.phase !== 'choosing' && v.needChoose) Snd.turn();
@@ -592,6 +696,9 @@
       const r = v.result;
       const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
       for (const id of r.winners) say(id, 'win');
+      const showdown = !r.byFold && !r.redeal;
+      if (showdown) { banner('쇼다운!', 'red small'); Snd.whoosh(); }
+      const T = showdown ? 1300 : 200;                       // 카드가 차례로 뒤집힌 뒤 승자 발표
       setTimeout(() => {
         if (r.redeal) { banner('재경기!', 'gold small', `${r.reason} — 판돈 이월`); Snd.deal(); return; }
         const top = r.winners.length ? r.hands[r.winners[0]] : null;
@@ -601,12 +708,15 @@
         else if (bigHand) { banner(`${top.name}!`, 'gold', `${names} 승리`); $('screen-table').querySelector('.felt').classList.add('shake'); if (top.tier === '광땡') confetti(60); }
         else banner(`${top ? top.name : ''}`, 'small', `${names} 승리`);
         setTimeout(() => $('screen-table').querySelector('.felt').classList.remove('shake'), 600);
-        if (r.winners.includes(myId)) { bigHand ? Snd.big() : Snd.win(); if (!bigHand) confetti(24); }
-        else if (me && me.inHand) Snd.lose();
-        /* 판돈 → 승자 */
+        const meWon = r.winners.includes(myId);
+        const myNet = me && me.inHand ? (r.payouts[myId] || 0) - me.contrib : 0;
+        if (meWon) { streak++; bigHand ? Snd.big() : Snd.win(); }
+        else if (me && me.inHand) { streak = 0; Snd.lose(); if (myNet <= -1000) { $('vignette').classList.remove('red'); void $('vignette').offsetWidth; $('vignette').classList.add('red'); reactionText(myNet <= -5000 ? '아… 크게 잃었다' : '아깝다…', 'bad'); } }
+        /* 판돈 → 승자, 그리고 승자 화면엔 성취 연출 */
         const pot = $('pot-box');
-        for (const id of r.winners) setTimeout(() => flyChip(pot, seatEl(id), r.payouts[id] || 0, true), 250);
-      }, 150);
+        for (const id of r.winners) setTimeout(() => flyChip(pot, seatEl(id), r.payouts[id] || 0, true), 300);
+        if (meWon) setTimeout(() => celebrate(myNet, bigHand, top ? top.name : ''), 500);
+      }, T);
     }
   }
 
@@ -641,7 +751,7 @@
     if ($('res-next')) $('res-next').onclick = doStart;
     if ($('res-rebuy')) $('res-rebuy').onclick = doRebuy;
     $('res-close').onclick = () => { box.classList.add('hidden'); renderTable(); };
-    if (resultHand !== view.handNo) { resultHand = view.handNo; setTimeout(() => { if (view && view.phase === 'result' && resultHand === view.handNo) box.classList.remove('hidden'); }, 1600); }
+    if (resultHand !== view.handNo) { resultHand = view.handNo; const wait = res.byFold ? 1800 : (res.winners.includes(myId) ? 4200 : 3200); setTimeout(() => { if (view && view.phase === 'result' && resultHand === view.handNo) box.classList.remove('hidden'); }, wait); }
   }
 
   /* 타이머 표시 (250ms) */
@@ -653,7 +763,11 @@
     if (el) { el.textContent = `${left}s`; el.classList.toggle('low', left <= 5); }
     const fill = $('timer-fill');
     fill.style.width = (deadlineTotal ? leftMs / deadlineTotal * 100 : 0) + '%'; fill.classList.toggle('low', left <= 5);
-    if (view.phase === 'betting' && view.turn === myId) $('center-msg').textContent = `내 차례 · ${left}초`;
+    if (view.phase === 'betting' && view.turn === myId) {
+      $('center-msg').textContent = `내 차례 · ${left}초`;
+      $('me').classList.toggle('urgent', left <= 5 && left > 0);
+      if (left <= 5 && left !== lastTickSec) { lastTickSec = left; Snd.tick(); }
+    } else { $('me').classList.remove('urgent'); lastTickSec = -1; }
     if (view.phase === 'choosing' && view.needChoose) $('center-msg').textContent = `3장 중 2장을 고르세요 · ${left}초`;
   }
   setInterval(tick, 250);
@@ -770,6 +884,9 @@
   const muteBtn = $('btn-mute');
   muteBtn.textContent = muted ? '🔇' : '🔊';
   muteBtn.onclick = () => { muted = !muted; localStorage.setItem(LS.mute, muted ? '1' : '0'); muteBtn.textContent = muted ? '🔇' : '🔊'; };
+
+  /* 테이블 화면은 스크롤 컨테이너가 아니다: 포커스·scrollIntoView 등으로 몰래 밀리면 되돌린다 */
+  { const st = $('screen-table'); st.addEventListener('scroll', () => { if (st.scrollLeft || st.scrollTop) { st.scrollLeft = 0; st.scrollTop = 0; } }); }
 
   if (params.get('room')) nameIn.focus();
 })();

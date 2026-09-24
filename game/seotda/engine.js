@@ -431,6 +431,7 @@
         turn: h ? h.turn : null, turnAt: h ? h.turnAt : 0, chooseAt: h ? h.chooseAt : 0,
         needChoose: !!(this.phase === 'choosing' && me && me.inHand && !me.folded && !me.chosen),
         players, actions: this.actionsFor(forId),
+        lastAction: h && h.actions.length ? { ...h.actions[h.actions.length - 1], n: h.actions.length } : null,
         canStart: this.canStart(),
         result: isResult ? h.result : null,
         log: this.log.slice(-30),
