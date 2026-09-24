@@ -9,9 +9,9 @@
   const LS = { name: 'seotda_name', token: 'seotda_token', mute: 'seotda_mute', peek: 'seotda_peek', bgm: 'seotda_bgm', char: 'seotda_char' };
   /* 캐릭터 3종: 자리 아바타 + 상황별 한마디 */
   const CHARS = {
-    dog: { name: '블랙 강아지', img: 'avatars/dog.jpg', q: { bet: ['멍!', '컹컹!', '으르렁…', '왈!'], die: ['깨갱…', '낑…'], win: ['멍멍멍!!', '왈왈!'], call: ['멍.', '컹.'] } },
-    sunji: { name: '홍어먹는 순지형', img: 'avatars/sunji.jpg', q: { bet: ['홍어 한 점 하고 간다', '삭힌 만큼 간다', '이건 먹어야지'], die: ['아 삭았다…', '다음 판에 보자'], win: ['홍어값 나왔다', '크~ 알싸하다'], call: ['콜.', '한 점만 더'] } },
-    kang: { name: '일베하는 강현이', img: 'avatars/kang.jpg', q: { bet: ['가즈아~', 'ㅋㅋㅋ 받고 더', '이건 못 참지'], die: ['아 몰랑', '에바다 에바'], win: ['ㅋㅋㅋㅋ 개이득', '인정?'], call: ['ㅇㅇ 콜', '따라감'] } },
+    dog: { name: '블랙 강아지', img: 'avatars/dog.jpg', q: { bet: ['멍!', '컹컹!', '으르렁…', '왈!'], die: ['깨갱…', '낑…'], win: ['멍멍멍!!', '왈왈!'], call: ['멍.', '컹.'], allin: ['왈왈왈왈!!!', '으르르릉!!'] } },
+    sunji: { name: '홍어먹는 순지형', img: 'avatars/sunji.jpg', q: { bet: ['홍어 한 점 하고 간다', '삭힌 만큼 간다', '이건 먹어야지'], die: ['아 삭았다…', '다음 판에 보자'], win: ['홍어값 나왔다', '크~ 알싸하다'], call: ['콜.', '한 점만 더'], allin: ['홍어 한 마리 통째로!', '삭힐 만큼 삭혔다, 간다!'] } },
+    kang: { name: '일베하는 강현이', img: 'avatars/kang.jpg', q: { bet: ['가즈아~', 'ㅋㅋㅋ 받고 더', '이건 못 참지'], die: ['아 몰랑', '에바다 에바'], win: ['ㅋㅋㅋㅋ 개이득', '인정?'], call: ['ㅇㅇ 콜', '따라감'], allin: ['풀매수 가즈아!!', '인생은 한방 ㅋㅋ'] } },
   };
   let myChar = localStorage.getItem(LS.char) || 'dog'; if (!CHARS[myChar]) myChar = 'dog';
   const avatarSrc = key => (CHARS[key] || CHARS.dog).img;
@@ -377,11 +377,14 @@
     const ab = $('actions');
     if (view.phase === 'betting' && view.actions.length) {
       ab.innerHTML = view.actions.map(a => {
-        const cls = a.type === 'die' ? 'die' : a.type === 'call' ? 'call' : (a.type === 'check' ? '' : 'raise');
-        const sub = a.type === 'check' || a.type === 'die' ? '' : `<small>${won(a.amount)}${me && a.amount >= me.chips ? ' 올인' : ''}</small>`;
+        const cls = a.type === 'die' ? 'die' : a.type === 'call' ? 'call' : a.type === 'allin' ? 'allin' : (a.type === 'check' ? '' : 'raise');
+        const sub = a.type === 'check' || a.type === 'die' ? '' : `<small>${won(a.amount)}${a.type !== 'allin' && me && a.amount >= me.chips ? ' 올인' : ''}</small>`;
         return `<button class="btn ${cls}" data-type="${a.type}">${a.label}${sub}</button>`;
       }).join('');
-      ab.querySelectorAll('button').forEach(b => b.onclick = () => { ab.querySelectorAll('button').forEach(x => x.disabled = true); doAction(b.dataset.type); });
+      ab.querySelectorAll('button').forEach(b => b.onclick = () => {
+        if (b.dataset.type === 'allin' && !confirm(`남은 ${won(me ? me.chips : 0)} 전부 올인할까요?`)) return;
+        ab.querySelectorAll('button').forEach(x => x.disabled = true); doAction(b.dataset.type);
+      });
     } else if (view.phase === 'choosing') {
       if (view.needChoose) {
         ab.innerHTML = `<button class="btn call" id="btn-choose" ${selected.length === 2 ? '' : 'disabled'}>이 2장으로 확정${selected.length === 2 ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
@@ -573,7 +576,8 @@
       if (p.inHand && p.contrib > q.contrib && v.phase !== 'result') {
         anyBet = true;
         setTimeout(() => flyChip(seatEl(p.id), $('pot-box'), p.contrib - q.contrib), 0);
-        if (Math.random() < 0.6) say(p.id, p.bet > q.bet && p.bet > v.curBet - 1 && p.contrib - q.contrib > 100 ? 'bet' : 'call');
+        if (p.chips === 0 && q.chips > 0 && !p.folded) { banner('올인!', 'red small', p.name); Snd.big(); say(p.id, 'allin'); $('screen-table').querySelector('.felt').classList.add('shake'); setTimeout(() => $('screen-table').querySelector('.felt').classList.remove('shake'), 600); }
+        else if (Math.random() < 0.6) say(p.id, p.bet > q.bet && p.bet > v.curBet - 1 && p.contrib - q.contrib > 100 ? 'bet' : 'call');
       }
       if (p.folded && !q.folded) { Snd.die(); say(p.id, 'die'); }
     }

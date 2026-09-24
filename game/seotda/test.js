@@ -106,10 +106,10 @@ t('삥 → 콜 → 다이 → 두 명 남아 진행', () => {
   const g = mk(['a', 'b', 'c']);
   g.startHand();
   const acts = g.actionsFor('p1').map(a => a.type);
-  assert.deepEqual(acts, ['check', 'ping', 'quarter', 'half', 'die']);
+  assert.deepEqual(acts, ['check', 'ping', 'quarter', 'half', 'allin', 'die']);
   g.act('p1', 'ping');
   assert.equal(g.hand.curBet, 100);
-  assert.deepEqual(g.actionsFor('p2').map(a => a.type), ['call', 'ddadang', 'quarter', 'half', 'die']);
+  assert.deepEqual(g.actionsFor('p2').map(a => a.type), ['call', 'ddadang', 'quarter', 'half', 'allin', 'die']);
   g.act('p2', 'call');
   g.act('p0', 'die');
   assert.equal(g.hand.street, 2);
@@ -125,6 +125,24 @@ t('전원 다이 → 남은 한 명이 팟 획득, 카드 비공개', () => {
   assert(g.hand.result.byFold);
   assert.equal(g.hand.result.revealed.length, 0);
   assert.equal(g.player('p1').chips, 9900 + 300);
+});
+t('올인: 남은 돈 전부, 같은 금액의 레이즈는 올인으로 대체', () => {
+  const g = mk(['a', 'b']);
+  g.startHand();
+  const opts = g.actionsFor('p1');
+  const ai = opts.find(o => o.type === 'allin');
+  assert(ai); assert.equal(ai.amount, 9900);
+  assert(g.act('p1', 'allin').ok);
+  assert(g.hand.allin.has('p1')); assert.equal(g.player('p1').chips, 0); assert.equal(g.hand.curBet, 9900);
+  const o0 = g.actionsFor('p0').map(o => o.type);
+  assert.deepEqual(o0, ['call', 'die']);                 // 콜하면 나도 올인 → 레이즈 불가
+  g.act('p0', 'call');
+  assert.equal(g.phase, 'result');                       // 둘 다 올인 → 베팅 스킵, 바로 쇼다운
+  assert.equal(total(g), 20000);
+  // 칩이 적어 하프가 올인과 같은 금액이면 하프 대신 올인만
+  const g2 = mk(['a', 'b']); g2.player('p1').chips = 150; g2.startHand();
+  const t2 = g2.actionsFor('p1').map(o => o.type);
+  assert(t2.includes('allin') && !t2.includes('half'));
 });
 t('따당은 현재 베팅의 2배, 레이즈 횟수 제한', () => {
   const g = mk(['a', 'b'], { maxRaises: 2 });

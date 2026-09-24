@@ -243,6 +243,8 @@ input:focus { border-color: var(--accent); }
 .actions .btn.die { color: var(--danger); }
 .actions .btn.raise { border-color: rgba(232, 194, 86, 0.5); }
 .actions .btn.call { background: var(--hwatu); border-color: #d8443a; color: #fff; }
+.actions .btn.allin { background: linear-gradient(180deg, #3a0a0a, #6b1010); border-color: #ff6b5e; color: #ffd6d0; box-shadow: 0 0 14px rgba(255, 80, 60, 0.35); }
+.actions .btn.allin small { color: #ffb3aa; }
 .actions .btn.call small { color: rgba(255, 255, 255, 0.78); }
 .actions .wait { grid-column: 1 / -1; text-align: center; color: var(--muted); font-size: 13px; align-self: center; }
 .actions .seg { grid-column: 1 / -1; }
