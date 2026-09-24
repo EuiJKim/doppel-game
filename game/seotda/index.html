@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#101014">
+<meta name="theme-color" content="#0b0908">
 <link rel="icon" href="data:,">
 <title>섯다 온라인 — 친구와 방 코드로 바로</title>
 <link rel="stylesheet" href="seotda.css">
@@ -12,13 +12,14 @@
 
 <!-- 홈: 닉네임 + 방 만들기 / 참가 -->
 <section id="screen-home" class="screen active">
+  <div class="bg-room"></div>
   <div class="home-wrap">
     <h1 class="logo">섯다<span class="logo-en">ONLINE</span></h1>
-    <p class="tagline">서버도, 계정도 없다. 방 코드 하나로 친구 6명까지.<br>방장 브라우저가 판을 돌리고, 나머지는 바로 붙는다.</p>
+    <p class="tagline">서버도, 계정도 없다. 방 코드 하나로 친구 6명까지.<br>2장 · 3장 · 홀덤 섯다 — 판돈 100원, 시작금 10,000원.</p>
 
     <label class="field">
       <span>닉네임</span>
-      <input id="in-name" maxlength="10" placeholder="예: 타짜" autocomplete="off">
+      <input id="in-name" maxlength="10" placeholder="예: 고니" autocomplete="off">
     </label>
 
     <button class="btn primary" id="btn-create">방 만들기</button>
@@ -31,12 +32,14 @@
     <div class="home-err" id="home-err"></div>
 
     <details class="rules">
-      <summary>족보 · 베팅 규칙</summary>
+      <summary>족보 · 베팅 · 모드</summary>
       <div class="rules-body">
         <p><b>족보 (높은 순)</b> 38광땡 › 18광땡 › 13광땡 › 장땡 › 9땡 … 1땡 › 알리(1·2) › 독사(1·4) › 구삥(1·9) › 장삥(1·10) › 장사(4·10) › 세륙(4·6) › 갑오(9끗) … 1끗 › 망통</p>
         <p><b>특수족보</b> (설정에서 끌 수 있음) 땡잡이(3띠+7열끗)는 1~9땡을 잡는다 · 암행어사(4열끗+7열끗)는 13·18광땡을 잡는다 · 구사(4+9)는 상대가 알리 이하면 재경기 · 멍텅구리구사(4열끗+9열끗)는 상대가 장땡 이하면 재경기</p>
-        <p><b>진행</b> 기본(앤티) → 1장 → 베팅 → 2장 → 베팅 → 쇼다운. 베팅은 삥(기본만큼)·따당(현재 베팅의 2배)·쿼터(팟의 ¼)·하프(팟의 ½)·콜·체크·다이. 칩이 모자라면 올인이 되고 자기 몫까지만 가져간다.</p>
-        <p><b>연결</b> 같은 와이파이가 아니어도 된다. 방장이 브라우저를 닫으면 방이 사라지니 방장은 끝까지 남아 있자.</p>
+        <p><b>모드</b> 2장 섯다: 1장 → 베팅 → 1장 → 베팅. 3장 섯다: 2장 → 베팅 → 1장 → 3장 중 2장 선택 → 베팅. 홀덤 섯다: 개인 2장 → 베팅 → 공유 2장 → 베팅 → 공유 1장 → 베팅, 5장 중 최선의 2장. 방장이 판 사이에 언제든 바꿀 수 있다.</p>
+        <p><b>베팅</b> 삥(100원)·따당(현재 베팅의 2배)·쿼터(팟의 ¼)·하프(팟의 ½)·콜·체크·다이. 돈이 모자라면 올인이 되고 자기 몫까지만 가져간다. 돈을 다 잃으면 언제든 10,000원으로 다시 참가.</p>
+        <p><b>쪼기</b> 내 카드는 뒤집혀 오고, 위로·옆으로·모서리·뒤집기·살살 중 골라서 직접 연다.</p>
+        <p><b>연결</b> 같은 와이파이가 아니어도 된다. 방장이 브라우저를 닫으면 방이 사라지니 방장은 끝까지 남아 있자. 게임 중에도 방 코드로 들어올 수 있다 (다음 판부터 참가).</p>
       </div>
     </details>
     <a class="back-link" href="../td/">← 회귀한 마왕 (TD)으로</a>
@@ -45,6 +48,7 @@
 
 <!-- 연결 중 -->
 <section id="screen-connect" class="screen">
+  <div class="bg-room"></div>
   <div class="center-box">
     <div class="spinner"></div>
     <div id="connect-msg">연결 중…</div>
@@ -54,6 +58,7 @@
 
 <!-- 대기실 -->
 <section id="screen-lobby" class="screen">
+  <div class="bg-room"></div>
   <div class="lobby-wrap">
     <div class="code-box">
       <div class="code-label">방 코드</div>
@@ -69,8 +74,10 @@
 
     <div class="settings" id="settings">
       <div class="settings-title">판 설정 <span class="muted" id="settings-who"></span></div>
-      <label>시작 칩 <input type="number" id="set-chips" min="500" step="500"></label>
-      <label>기본(앤티) <input type="number" id="set-ante" min="10" step="10"></label>
+      <div class="seg" id="set-mode">
+        <button data-mode="2">2장 섯다</button><button data-mode="3">3장 섯다</button><button data-mode="holdem">홀덤 섯다</button>
+      </div>
+      <div class="muted fixed-note">판돈(앤티) 100원 · 시작금 10,000원 · 돈이 0이면 언제든 10,000원 재참가</div>
       <label>레이즈 제한/라운드 <input type="number" id="set-raises" min="0" max="10"></label>
       <label>턴 시간(초, 0=무제한) <input type="number" id="set-turn" min="0" max="180"></label>
       <label>최대 인원 <input type="number" id="set-max" min="2" max="8"></label>
@@ -85,36 +92,79 @@
 
 <!-- 테이블 -->
 <section id="screen-table" class="screen">
+  <div class="bg-room"></div>
+  <div class="smoke s1"></div><div class="smoke s2"></div><div class="smoke s3"></div>
+  <div class="lamp"><div class="cord"></div><div class="shade"></div><div class="bulb"></div></div>
+
   <div class="topbar">
     <div class="top-left"><span class="top-code" id="top-code"></span> <span class="muted" id="top-hand"></span></div>
-    <div class="top-mid"><span class="pot-label">팟</span> <b class="pot" id="pot">0</b></div>
+    <div class="top-mid"><span class="mode-tag" id="mode-tag"></span>
+      <div class="seg mini top-seg hidden" id="top-mode"><button data-mode="2">2장</button><button data-mode="3">3장</button><button data-mode="holdem">홀덤</button></div>
+    </div>
     <div class="top-right">
+      <button class="icon-btn" id="btn-invite" title="초대">➕</button>
       <button class="icon-btn" id="btn-log" title="기록·채팅">💬</button>
       <button class="icon-btn" id="btn-mute" title="소리">🔊</button>
       <button class="icon-btn" id="btn-leave" title="나가기">✕</button>
     </div>
   </div>
 
-  <div class="seats" id="seats"></div>
-
-  <div class="center-msg" id="center-msg"></div>
+  <div class="felt">
+    <div class="seats" id="seats"></div>
+    <div class="center">
+      <div class="pot-box" id="pot-box"><span class="pot-label">판돈</span><b class="pot" id="pot">0</b><span class="won">원</span></div>
+      <div class="board" id="board"></div>
+      <div class="center-msg" id="center-msg"></div>
+      <div class="timer-bar" id="timer-bar"><div class="timer-fill" id="timer-fill"></div></div>
+    </div>
+  </div>
 
   <div class="me" id="me">
     <div class="me-cards" id="me-cards"></div>
     <div class="me-info">
       <div class="me-name" id="me-name"></div>
       <div class="me-hand" id="me-hand"></div>
-      <div class="me-chips">💰 <b id="me-chips">0</b> <span class="muted" id="me-bet"></span></div>
+      <div class="me-chips">💰 <b id="me-chips">0</b>원 <span class="muted" id="me-bet"></span></div>
+      <div class="peek-modes" id="peek-modes"></div>
     </div>
   </div>
 
   <div class="actions" id="actions"></div>
+
+  <!-- 이펙트 레이어 -->
+  <div class="fx" id="fx"></div>
+  <div class="banner hidden" id="banner"></div>
 
   <!-- 결과 -->
   <div class="result hidden" id="result">
     <div class="result-title" id="result-title"></div>
     <div class="result-body" id="result-body"></div>
     <div class="result-actions" id="result-actions"></div>
+  </div>
+
+  <!-- 초대 -->
+  <div class="modal hidden" id="invite">
+    <div class="modal-box">
+      <div class="code-label">방 코드</div>
+      <div class="code" id="invite-code"></div>
+      <div class="code-actions">
+        <button class="btn small" id="inv-copy-code">코드 복사</button>
+        <button class="btn small" id="inv-copy-link">초대 링크 복사</button>
+      </div>
+      <div class="copied" id="inv-copied"></div>
+      <div class="muted">게임 중에도 들어올 수 있어요. 다음 판부터 참가합니다.</div>
+      <button class="btn ghost" id="inv-close">닫기</button>
+    </div>
+  </div>
+
+  <!-- 재참가 -->
+  <div class="modal hidden" id="rebuy">
+    <div class="modal-box">
+      <div class="rebuy-title">돈을 다 잃었어요</div>
+      <div class="muted">10,000원으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.</div>
+      <button class="btn primary" id="rb-yes">10,000원으로 다시 참가</button>
+      <button class="btn ghost" id="rb-no">잠깐 구경만</button>
+    </div>
   </div>
 
   <!-- 기록·채팅 -->
@@ -130,6 +180,7 @@
 <script src="vendor/peerjs.min.js"></script>
 <script src="rules.js"></script>
 <script src="engine.js"></script>
+<script src="cards.js"></script>
 <script src="net.js"></script>
 <script src="app.js"></script>
 </body>
