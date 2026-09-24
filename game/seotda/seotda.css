@@ -84,6 +84,14 @@ input:focus { border-color: var(--accent); }
 .join-row .btn { width: 110px; }
 .join-row input { text-transform: uppercase; letter-spacing: 0.15em; font-weight: 700; }
 .home-err { color: var(--danger); font-size: 13px; min-height: 18px; }
+.inapp { background: rgba(232, 194, 86, 0.12); border: 1px solid rgba(232, 194, 86, 0.5); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.6; color: var(--ink); }
+.inapp b { color: var(--accent); }
+.diag { background: rgba(26, 21, 18, 0.92); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.diag .ok { color: var(--ok); font-weight: 800; }
+.diag .bad { color: var(--danger); font-weight: 800; }
+.diag .wait { color: var(--accent); }
+.diag .ua { font-size: 10px; word-break: break-all; opacity: .6; margin-top: 6px; }
+#connect-hint { max-width: 320px; text-align: center; line-height: 1.6; }
 .char-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .char-pick button { font-family: inherit; background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 8px 6px 10px; color: var(--muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
 .char-pick button img { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.1); }
@@ -145,7 +153,7 @@ input:focus { border-color: var(--accent); }
 #screen-table > .bg-room, #screen-table > .smoke, #screen-table > .lamp { position: absolute; z-index: 0; }
 #screen-table > .smoke { z-index: 1; }
 #screen-table > .fx, #screen-table > .banner, #screen-table > .result, #screen-table > .modal, #screen-table > .drawer, #screen-table > .toast { position: absolute; }
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: rgba(0, 0, 0, 0.45); font-size: 13px; backdrop-filter: blur(3px); }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: rgba(0, 0, 0, 0.45); font-size: 13px; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .top-code { font-weight: 800; letter-spacing: 0.15em; color: var(--accent); }
 .mode-tag { font-size: 12px; font-weight: 800; color: var(--ink); background: rgba(184, 38, 43, 0.55); border-radius: 8px; padding: 3px 9px; }
 .top-right { display: flex; gap: 2px; }
