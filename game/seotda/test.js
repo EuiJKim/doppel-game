@@ -452,4 +452,60 @@ t('랜덤 플레이 (3장·홀덤) 300판: 칩 보존, 예외 없음', () => {
   }
 });
 
+console.log('자리 비움 · 타이머 연장 · 전적 · 스냅샷');
+t('자리 비움: 다음 판부터 빠지고, 진행 중인 판은 그대로', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand();
+  g.setAway('p2', true);
+  assert(g.hand.participants.includes('p2'));
+  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  g.startHand();
+  assert(!g.hand.participants.includes('p2'));
+  assert.equal(g.view('p2').players.find(p => p.id === 'p2').away, true);
+  g.setAway('p2', false);
+  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  g.startHand();
+  assert(g.hand.participants.includes('p2'));
+});
+t('타이머 연장: 내 차례에 1회 +15초', () => {
+  const g = mk(['a', 'b'], { turnSec: 30 });
+  g.startHand();
+  const at = g.hand.turnAt;
+  assert.equal(g.canExtend('p0'), false);       // 내 차례 아님
+  assert.equal(g.extendTurn('p1'), true);
+  assert.equal(g.hand.turnAt, at + 15000);
+  assert.equal(g.extendTurn('p1'), false);      // 1회 제한
+  assert.equal(g.view('p1').canExtend, false);
+});
+t('전적: 판수·승·순손익·최고 족보·연승, 기록', () => {
+  const g = mk(['a', 'b']);
+  for (let i = 0; i < 3; i++) { g.startHand(); while (g.phase === 'betting') g.act(g.hand.turn, 'check'); }
+  const s0 = g.player('p0').stats, s1 = g.player('p1').stats;
+  assert.equal(s0.hands + s1.hands, 6);
+  assert.equal(s0.net + s1.net, 0);
+  assert(s0.wins + s1.wins >= 3);
+  assert(s0.best && s0.best.name);
+  assert.equal(g.history.length, 3);
+  assert.equal(g.view('p0').history.length, 3);
+});
+t('스냅샷 → 복원: 카드 없음, 진행 중 판은 환급, 새 방장만 접속 상태, 딜러 순환 유지', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand(); while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  g.startHand(); g.act(g.hand.turn, 'half');           // 판 진행 중 (p1 이 하프)
+  const before = { p0: g.player('p0').chips + g.hand.contrib.p0, p1: g.player('p1').chips + g.hand.contrib.p1, p2: g.player('p2').chips + g.hand.contrib.p2 };
+  const snap = JSON.parse(JSON.stringify(g.snapshot('p0')));
+  assert(!JSON.stringify(snap).includes('"cards"'));
+  const g2 = Game.restore(snap, 'p1');
+  assert.equal(g2.phase, 'lobby'); assert.equal(g2.handNo, 2);
+  for (const id of ['p0', 'p1', 'p2']) assert.equal(g2.player(id).chips, before[id]);
+  assert.equal(g2.player('p1').connected, true); assert.equal(g2.player('p0').connected, false); assert.equal(g2.player('p2').connected, false);
+  assert.equal(g2.canStart(), false);                  // 아직 아무도 재접속 안 함
+  g2.addPlayer('p2', 'c');                              // 재접속
+  assert.equal(g2.canStart(), true);
+  g2.startHand();
+  assert.equal(g2.handNo, 3);
+  assert.equal(g2.hand.dealer, 'p2');                   // 2판 딜러 p1 → 다음 p2
+  assert.equal(g2.hand.participants.length, 2);
+});
+
 console.log(`\n${n} tests passed`);

@@ -9,6 +9,7 @@
 })(typeof self !== 'undefined' ? self : this, function (R) {
 
   const ANTE = 100, START_CHIPS = 10000;
+  const newStats = () => ({ hands: 0, wins: 0, net: 0, won: 0, best: null, streak: 0, maxStreak: 0 });
   const DEFAULTS = { mode: '2', ante: ANTE, startChips: START_CHIPS, special: true, maxRaises: 3, turnSec: 30, maxPlayers: 6 };
   const ACTION_LABEL = { check: '체크', call: '콜', ping: '삥', ddadang: '따당', quarter: '쿼터', half: '하프', allin: '올인', die: '다이' };
   /* 스테이지: deal:n(개인 카드 n장) · board:n(공유 카드 n장) · bet · choose(3장 중 2장) · show */
@@ -28,8 +29,40 @@
       this.hand = null;
       this.handNo = 0;
       this.log = [];
+      this.history = [];
+      this.lastDealerSeat = null;
       this.version = 0;
       this.onChange = null;
+    }
+
+    /* ── 스냅샷(카드 제외) / 복원 — 방장 이전용 ──
+     * 진행 중인 판이 있으면 그 판은 무효: 각자 넣은 돈을 돌려주고 다음 판부터 이어간다. */
+    snapshot(hostId) {
+      const h = this.hand;
+      return {
+        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat,
+        players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats })),
+        refund: h && this.inProgress() ? { ...h.contrib, __carry: h.carry } : null,
+        carry: h && this.phase === 'result' && h.result && h.result.redeal ? h.pot : 0,
+        history: this.history.slice(-30), log: this.log.slice(-40),
+      };
+    }
+    static restore(snap, newHostId, rng) {
+      const g = new Game(snap.settings, rng);
+      g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId }));
+      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null;
+      g.history = snap.history || []; g.log = snap.log || [];
+      g.phase = 'lobby';
+      const oldHost = g.players.find(p => p.id === snap.hostId);
+      const me = g.player(newHostId);
+      g._log(`방장 연결 끊김 → ${me ? me.name : '?'}이(가) 방장을 이어받음`);
+      if (snap.refund) {
+        for (const id in snap.refund) { if (id === '__carry') continue; const p = g.player(id); if (p) p.chips += snap.refund[id]; }
+        g.pendingCarry = snap.refund.__carry || 0;
+        g._log('진행 중이던 판은 무효 — 넣은 돈을 돌려드렸어요');
+      } else g.pendingCarry = snap.carry || 0;
+      if (oldHost) oldHost.connected = false;
+      return g;
     }
 
     /* ── 유틸 ── */
@@ -67,7 +100,7 @@
       if (connected >= this.settings.maxPlayers) return null;
       const used = new Set(this.players.map(p => p.seat));
       let seat = 0; while (used.has(seat)) seat++;
-      const p = { id, name: (name || '익명').slice(0, 10), avatar: String(avatar || '').slice(0, 12), chips: this.settings.startChips, seat, connected: true, rebuys: 0 };
+      const p = { id, name: (name || '익명').slice(0, 10), avatar: String(avatar || '').slice(0, 12), chips: this.settings.startChips, seat, connected: true, rebuys: 0, away: false, stats: newStats() };
       this.players.push(p);
       this._log(`${p.name} 입장${this.handNo ? ' (다음 판부터 참가)' : ''}`);
       this._touch();
@@ -117,7 +150,23 @@
       this._touch();
       return true;
     }
-    eligible() { return this.seated().filter(p => p.connected && p.chips > 0); }
+    eligible() { return this.seated().filter(p => p.connected && p.chips > 0 && !p.away); }
+    /* 자리 비움: 다음 판부터 빠진다(진행 중인 판은 그대로). 돌아오면 다음 판부터 참가 */
+    setAway(id, away) {
+      const p = this.player(id); if (!p) return false;
+      away = !!away; if (p.away === away) return true;
+      p.away = away; this._log(`${p.name} ${away ? '자리 비움' : '돌아옴'}`); this._touch(); return true;
+    }
+    /* 타이머 연장: 판마다 1인 1회, 내 차례(또는 선택 단계)에서 +15초 */
+    extendTurn(id) {
+      const h = this.hand; if (!h || !this.settings.turnSec) return false;
+      if (h.extended.has(id)) return false;
+      if (this.phase === 'betting' && h.turn === id) h.turnAt += 15000;
+      else if (this.phase === 'choosing' && this._inLiveHand(id) && !h.chosen[id]) h.chooseAt += 15000;
+      else return false;
+      h.extended.add(id); this._log(`${this.player(id).name}: +15초`); this._touch(); return true;
+    }
+    canExtend(id) { const h = this.hand; return !!(h && this.settings.turnSec && !h.extended.has(id) && ((this.phase === 'betting' && h.turn === id) || (this.phase === 'choosing' && this._inLiveHand(id) && !h.chosen[id]))); }
     canStart() { return !this.inProgress() && this.eligible().length >= 2; }
 
     /* ── 판 시작 ── */
@@ -130,7 +179,7 @@
         participants = prev.participants.filter(id => !prev.folded.has(id) && this.player(id) && this.player(id).connected);
         if (participants.length < 2) participants = null;
       }
-      const carry = redeal ? prev.pot : 0;
+      const carry = redeal ? prev.pot : (this.pendingCarry || 0); this.pendingCarry = 0;
       if (!participants) participants = this.eligible().map(p => p.id);
       const mode = this.mode();
 
@@ -139,10 +188,11 @@
       let dealer;
       if (redeal && prev && order.includes(prev.dealer)) dealer = prev.dealer;
       else {
-        const prevSeat = prev ? (this.player(prev.dealer) ? this.player(prev.dealer).seat : -1) : -1;
+        const prevSeat = prev ? (this.player(prev.dealer) ? this.player(prev.dealer).seat : -1) : (this.lastDealerSeat ?? -1);
         const seats = order.map(id => this.player(id).seat);
         dealer = order[seats.findIndex(s => s > prevSeat)] ?? order[0];
       }
+      this.lastDealerSeat = this.player(dealer).seat;
       const di = order.indexOf(dealer);
       const turnOrder = order.slice(di + 1).concat(order.slice(0, di + 1));
 
@@ -151,7 +201,7 @@
         deck: R.shuffle(this.rng), cards: {}, board: [], boardHidden: 0, folded: new Set(), allin: new Set(),
         contrib: {}, pot: carry, carry, street: 0, stageIdx: -1, stageLabel: '',
         bets: {}, curBet: 0, acted: new Set(), raises: 0, turn: null, turnAt: 0,
-        chosen: {}, chooseAt: 0, result: null, actions: [],
+        chosen: {}, chooseAt: 0, result: null, actions: [], extended: new Set(),
       };
       for (const id of participants) { h.cards[id] = []; h.contrib[id] = 0; if (this.player(id).chips === 0) h.allin.add(id); }
       this.phase = 'betting';
@@ -367,6 +417,21 @@
         }
       }
       h.result = result;
+      /* 전적·기록 */
+      for (const id of h.participants) {
+        const p = this.player(id); if (!p) continue;
+        const st = p.stats || (p.stats = newStats());
+        st.hands++; st.net += (payouts[id] || 0) - h.contrib[id];
+        if (result.winners.includes(id)) { st.wins++; st.streak++; st.maxStreak = Math.max(st.maxStreak, st.streak); st.won += payouts[id] || 0; }
+        else st.streak = 0;
+        const hd = result.hands && result.hands[id];
+        if (hd && (!st.best || hd.score > st.best.score)) st.best = { name: hd.name, score: hd.score };
+      }
+      if (!result.redeal) {
+        const top = result.winners.length && result.hands[result.winners[0]] ? result.hands[result.winners[0]].name : (byFold ? '모두 다이' : '');
+        this.history.push({ no: h.no, mode: h.mode, winners: result.winners.map(id => this.player(id) ? this.player(id).name : '?'), hand: top, catcher: result.catcher || null, pot: Object.values(h.contrib).reduce((a, b) => a + b, 0) + h.carry, net: Object.fromEntries(h.participants.map(id => [id, (payouts[id] || 0) - h.contrib[id]])) });
+        if (this.history.length > 30) this.history.shift();
+      }
       for (const id in payouts) { const p = this.player(id); if (p) p.chips += payouts[id]; }
       h.pot = result.redeal ? h.pot : 0;
       this.phase = 'result';
@@ -418,7 +483,7 @@
           chosen: !!(inHand && h.chosen[p.id]),
           isDealer: !!(h && h.dealer === p.id), isTurn: !!(h && h.turn === p.id),
           payout: isResult ? (h.result.payouts[p.id] || 0) : 0,
-          canRebuy: this.canRebuy(p.id),
+          canRebuy: this.canRebuy(p.id), away: !!p.away, stats: p.stats,
         };
       });
       const me = players.find(p => p.id === forId);
@@ -432,6 +497,7 @@
         needChoose: !!(this.phase === 'choosing' && me && me.inHand && !me.folded && !me.chosen),
         players, actions: this.actionsFor(forId),
         lastAction: h && h.actions.length ? { ...h.actions[h.actions.length - 1], n: h.actions.length } : null,
+        canExtend: this.canExtend(forId), history: this.history.slice(-12),
         canStart: this.canStart(),
         result: isResult ? h.result : null,
         log: this.log.slice(-30),
