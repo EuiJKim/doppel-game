@@ -180,5 +180,43 @@ const SeotdaNet = (() => {
     close() { this.closed = true; clearInterval(this.hb); if (this._bye) { this._bye(); window.removeEventListener('pagehide', this._bye); } try { this.peer && this.peer.destroy(); } catch (e) { } }
   }
 
-  return { Host, Client, makeCode, normCode, PREFIX, customServer };
+  /* 인앱 브라우저(카카오톡·인스타·페북·네이버·라인)는 WebRTC/WebSocket이 막히거나 불안정한 경우가 많다 */
+  function inAppBrowser() {
+    const ua = navigator.userAgent || '';
+    const m = ua.match(/KAKAOTALK|FBAN|FBAV|Instagram|NAVER\(inapp|Line\/|DaumApps|SamsungBrowser\/[0-9.]+ .*wv|; wv\)/i);
+    return m ? m[0].replace(/[\/(;].*/, '') : null;
+  }
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  /* 연결 진단: ① WebRTC 지원 ② 연결 서버(시그널링) ③ STUN(공인 주소) ④ TURN(중계) 후보 수집 */
+  async function diagnose(onStep) {
+    const out = { webrtc: !!window.RTCPeerConnection, signaling: null, host: 0, srflx: 0, relay: 0, secure: location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1', inApp: inAppBrowser(), ios: isIOS(), ua: navigator.userAgent };
+    onStep && onStep(out);
+    if (!out.webrtc) return out;
+    /* 시그널링 서버 */
+    await new Promise(res => {
+      let done = false; const fin = v => { if (!done) { done = true; out.signaling = v; try { p.destroy(); } catch (e) { } res(); } };
+      let p; try { p = new Peer(undefined, peerOptions(true)); } catch (e) { fin('error'); return; }
+      p.on('open', () => fin('ok')); p.on('error', err => fin(err && err.type || 'error'));
+      setTimeout(() => fin('timeout'), 8000);
+    });
+    onStep && onStep(out);
+    /* ICE 후보 */
+    await new Promise(res => {
+      let pc; try { pc = new RTCPeerConnection(peerOptions(true).config); } catch (e) { res(); return; }
+      pc.createDataChannel('d');
+      pc.onicecandidate = e => {
+        if (!e.candidate) return;
+        const c = e.candidate.candidate || '';
+        if (/ typ host/.test(c)) out.host++; else if (/ typ srflx/.test(c)) out.srflx++; else if (/ typ relay/.test(c)) out.relay++;
+        onStep && onStep(out);
+      };
+      pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => { });
+      setTimeout(() => { try { pc.close(); } catch (e) { } res(); }, 7000);
+    });
+    onStep && onStep(out);
+    return out;
+  }
+
+  return { Host, Client, makeCode, normCode, PREFIX, customServer, diagnose, inAppBrowser, isIOS };
 })();

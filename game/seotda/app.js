@@ -220,7 +220,7 @@
     show('screen-connect');
     client = new N.Client(c, name, token, {
       onOpen: () => { $('connect-msg').textContent = '연결됐어요. 방 정보를 받는 중…'; },
-      onStatus: msg => { if (!view) $('connect-msg').textContent = msg; },
+      onStatus: msg => { if (!view) { $('connect-msg').textContent = msg; $('connect-hint').textContent = /직접 연결|중계/.test(msg) ? (inApp ? '카카오톡 등 앱 안 브라우저면 Safari/Chrome으로 열어 주세요' : '8초 넘게 걸리면 중계 서버로 자동 전환됩니다') : ''; } },
       onMessage: msg => {
         if (msg.t === 'state') receiveView(msg.view);
         else if (msg.t === 'chat') addChat(msg.line);
@@ -691,6 +691,38 @@
   if (params.get('room')) codeIn.value = N.normCode(params.get('room'));
   function getName() { const n = nameIn.value.trim().slice(0, 10) || '익명'; localStorage.setItem(LS.name, n); return n; }
   function requireLib() { if (typeof Peer === 'undefined') { $('home-err').textContent = '연결 라이브러리를 불러오지 못했어요. 새로고침 해주세요.'; return false; } return true; }
+
+  /* 인앱 브라우저 안내 (카카오톡 등에서 링크를 열면 연결이 막히는 경우가 많다) */
+  const inApp = N.inAppBrowser();
+  if (inApp) {
+    $('inapp').classList.remove('hidden');
+    $('inapp').innerHTML = `<b>${esc(inApp)} 안의 브라우저</b>로 열려 있어요. 여기서는 연결이 안 될 수 있어요.<br>${N.isIOS() ? '오른쪽 아래(또는 위) <b>⋯ / 공유</b> 버튼 → <b>Safari로 열기</b>' : '오른쪽 위 <b>⋮</b> → <b>다른 브라우저로 열기(Chrome)</b>'} 를 눌러 다시 열어 주세요.`;
+  }
+  /* 연결 진단 */
+  $('btn-diag').onclick = async () => {
+    const box = $('diag'); box.classList.remove('hidden');
+    const row = (label, v) => `<div>${label}: ${v}</div>`;
+    const paint = d => {
+      const sig = d.signaling == null ? '<span class="wait">확인 중…</span>' : d.signaling === 'ok' ? '<span class="ok">정상</span>' : `<span class="bad">실패 (${esc(d.signaling)})</span>`;
+      const ice = `호스트 ${d.host} · 공인(STUN) ${d.srflx} · 중계(TURN) ${d.relay}`;
+      box.innerHTML =
+        row('브라우저', `${d.ios ? 'iOS' : ''} ${d.inApp ? `<span class="bad">${esc(d.inApp)} 인앱</span>` : '<span class="ok">일반 브라우저</span>'}`) +
+        row('HTTPS', d.secure ? '<span class="ok">정상</span>' : '<span class="bad">아님 (WebRTC 불가)</span>') +
+        row('WebRTC', d.webrtc ? '<span class="ok">지원</span>' : '<span class="bad">미지원</span>') +
+        row('연결 서버', sig) +
+        row('네트워크 경로', `${ice}${d.srflx ? ' <span class="ok">✓ 외부 연결 가능</span>' : ''}${!d.srflx && d.relay ? ' <span class="ok">✓ 중계로 가능</span>' : ''}`) +
+        `<div class="ua">${esc(d.ua)}</div>`;
+    };
+    if (typeof Peer === 'undefined') { box.innerHTML = '<span class="bad">연결 라이브러리를 불러오지 못했어요 (오래된 iOS/브라우저일 수 있어요). iOS 14 이상, 최신 Safari/Chrome을 써주세요.</span>'; return; }
+    const d = await N.diagnose(paint); paint(d);
+    let advice = '';
+    if (d.inApp) advice = '인앱 브라우저가 원인일 가능성이 커요. Safari/Chrome으로 다시 열어 주세요.';
+    else if (d.signaling !== 'ok') advice = '연결 서버에 못 닿았어요. 와이파이/데이터를 바꿔 보거나, 잠시 후 다시 시도해 주세요.';
+    else if (!d.srflx && !d.relay) advice = '외부로 나가는 경로가 없어요(회사망·공용 와이파이 방화벽). 다른 네트워크(휴대폰 데이터)로 시도해 주세요.';
+    else if (!d.srflx && d.relay) advice = '직접 연결은 막혀 있지만 중계로는 가능해요. 참가 시 8초쯤 뒤 중계로 자동 전환됩니다.';
+    else advice = '이 기기는 연결 조건이 정상이에요. 그래도 안 되면 방장 쪽 기기에서도 진단을 해보세요 (방장 브라우저가 닫히면 방이 사라져요).';
+    box.innerHTML += `<div style="margin-top:8px;color:var(--ink)">→ ${advice}</div>`;
+  };
   function renderCharPick() {
     $('char-pick').innerHTML = Object.entries(CHARS).map(([k, c]) => `<button type="button" data-char="${k}" class="${k === myChar ? 'on' : ''}"><img src="${c.img}" alt="">${esc(c.name)}</button>`).join('');
     $('char-pick').querySelectorAll('button').forEach(b => b.onclick = () => { myChar = b.dataset.char; localStorage.setItem(LS.char, myChar); renderCharPick(); });
