@@ -152,7 +152,9 @@ input:focus { border-color: var(--accent); }
 #screen-table > * { position: relative; z-index: 2; }
 #screen-table > .bg-room, #screen-table > .smoke, #screen-table > .lamp { position: absolute; z-index: 0; }
 #screen-table > .smoke { z-index: 1; }
-#screen-table > .fx, #screen-table > .banner, #screen-table > .result, #screen-table > .modal, #screen-table > .drawer, #screen-table > .toast { position: absolute; }
+#screen-table > .fx, #screen-table > .banner, #screen-table > .result, #screen-table > .modal, #screen-table > .drawer, #screen-table > .toast, #screen-table > .winfx, #screen-table > .vignette, #screen-table > .reaction { position: absolute; }
+.me, .actions, .topbar { overflow-x: hidden; }
+#screen-table { overflow: hidden; }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: rgba(0, 0, 0, 0.45); font-size: 13px; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .top-code { font-weight: 800; letter-spacing: 0.15em; color: var(--accent); }
 .mode-tag { font-size: 12px; font-weight: 800; color: var(--ink); background: rgba(184, 38, 43, 0.55); border-radius: 8px; padding: 3px 9px; }
@@ -289,6 +291,57 @@ input:focus { border-color: var(--accent); }
 .banner .sub { display: block; font-size: 16px; font-weight: 700; color: var(--ink); text-shadow: 0 2px 8px #000; margin-top: 4px; }
 @keyframes bannerIn { 0% { transform: scale(0.3); opacity: 0; } 12% { transform: scale(1.15); opacity: 1; } 20% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: scale(1) translateY(-20px); } }
 .felt.shake { animation: shake .5s ease; }
+/* 딜: 덱(판돈 자리)에서 각 자리로 날아가는 카드 */
+.card-fly { position: absolute; width: 44px; height: 66px; border-radius: 5px; overflow: hidden; box-shadow: 0 6px 16px rgba(0,0,0,0.6); transform: translate(-50%, -50%); will-change: transform; }
+.card-fly img, .card-fly svg { width: 100%; height: 100%; display: block; }
+.card.landed { animation: land .25s ease both; }
+@keyframes land { 0% { transform: scale(1.12); } 100% { transform: scale(1); } }
+/* 행동 팝업 (콜! 하프 300!) */
+.act-pop { position: absolute; left: 50%; top: 62%; transform: translate(-50%, -50%); font-size: 18px; font-weight: 900; color: #fff; background: rgba(0,0,0,0.75); border: 2px solid var(--accent); border-radius: 10px; padding: 4px 10px; white-space: nowrap; z-index: 5; pointer-events: none; animation: actPop 1.3s cubic-bezier(.2, 1.4, .4, 1) both; text-shadow: 0 2px 6px #000; }
+.act-pop.die { border-color: var(--danger); color: #ff8a80; }
+.act-pop.raise { border-color: #ff6b5e; color: var(--accent); }
+.act-pop.allin { border-color: #ff3b2f; background: #5a0d0d; color: #ffd6d0; font-size: 22px; }
+.me .act-pop { left: 90px; top: 30%; transform: none; animation-name: actPopMe; }
+@keyframes actPop { 0% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; } 15% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -90%) scale(1); } }
+@keyframes actPopMe { 0% { transform: scale(2.2); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
+/* 턴이 넘어올 때 자리 팝 */
+.seat.turn-in { animation: turnIn .6s cubic-bezier(.2, 1.4, .4, 1) both; }
+@keyframes turnIn { 0% { transform: scale(.94); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+.me.turn-in { animation: turnInMe .6s ease both; }
+@keyframes turnInMe { 0% { background: rgba(232,194,86,0.35); } 100% { background: rgba(232,194,86,0.08); } }
+.actions .btn.arming { opacity: 0.35; transform: translateY(8px); pointer-events: none; }
+.actions .btn { transition: opacity .35s ease, transform .35s cubic-bezier(.2, 1.2, .4, 1); }
+/* 내 패 리액션 */
+.reaction { position: absolute; left: 12px; bottom: 208px; max-width: calc(100vw - 24px); overflow: hidden; z-index: 6; font-size: 30px; font-weight: 900; letter-spacing: -0.02em; color: var(--accent); -webkit-text-stroke: 1.5px #3a2600; text-shadow: 0 3px 0 #3a2600, 0 0 24px rgba(232,194,86,0.7); transform-origin: left center; animation: reactIn 2.4s cubic-bezier(.2, 1.4, .4, 1) both; pointer-events: none; white-space: nowrap; }
+.reaction.great { font-size: 38px; color: #ffe08a; text-shadow: 0 3px 0 #6b1010, 0 0 30px rgba(255,120,80,0.9), 0 0 60px rgba(232,194,86,0.8); animation: reactGreat 2.6s cubic-bezier(.2, 1.4, .4, 1) both; }
+.reaction.ok { color: #9ee8b8; -webkit-text-stroke: 1.5px #0d3a22; text-shadow: 0 3px 0 #0d3a22, 0 0 20px rgba(79,201,138,0.6); }
+.reaction.bad { color: #b9b1a6; -webkit-text-stroke: 1px #222; text-shadow: 0 2px 0 #222; font-size: 24px; animation: reactBad 2.2s ease both; }
+@keyframes reactIn { 0% { transform: rotate(-8deg) scale(0); opacity: 0; } 14% { transform: rotate(-6deg) scale(1.15); opacity: 1; } 24% { transform: rotate(-6deg) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: rotate(-6deg) translateY(-14px); } }
+@keyframes reactGreat { 0% { transform: rotate(-8deg) scale(0); opacity: 0; } 12% { transform: rotate(-6deg) scale(1.3); opacity: 1; } 20% { transform: rotate(-6deg) scale(1); } 30% { transform: rotate(-4deg) scale(1.06); } 40% { transform: rotate(-6deg) scale(1); } 85% { opacity: 1; } 100% { opacity: 0; transform: scale(1.2); } }
+@keyframes reactBad { 0% { transform: translateY(-16px); opacity: 0; } 20% { transform: translateY(0); opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(10px); } }
+/* 승리 연출 */
+.winfx { position: absolute; inset: 0; z-index: 9; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; animation: winFade 3.2s ease both; }
+@keyframes winFade { 0% { opacity: 0; } 8% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
+.winfx .w-title { font-size: 64px; font-weight: 900; color: #ffe08a; letter-spacing: 0.05em; -webkit-text-stroke: 2px #6b3a00; text-shadow: 0 6px 0 #6b3a00, 0 0 40px rgba(255,200,80,0.9); animation: winTitle .9s cubic-bezier(.2, 1.5, .4, 1) both; }
+.winfx .w-amount { font-size: 40px; font-weight: 900; color: #fff; text-shadow: 0 0 20px rgba(79,201,138,0.9), 0 3px 0 #0d3a22; font-variant-numeric: tabular-nums; animation: winAmt .6s ease .4s both; }
+.winfx .w-sub { font-size: 16px; font-weight: 800; color: var(--accent); text-shadow: 0 2px 6px #000; animation: winAmt .5s ease .8s both; }
+.winfx .w-streak { font-size: 22px; font-weight: 900; color: #ff8f7a; text-shadow: 0 0 18px rgba(255,80,60,0.8), 0 2px 0 #4a0d0d; animation: winAmt .5s ease 1s both; }
+@keyframes winTitle { 0% { transform: scale(0) rotate(-10deg); } 60% { transform: scale(1.15) rotate(2deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes winAmt { 0% { transform: translateY(20px) scale(.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.coin { position: absolute; top: -30px; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff2b0, #f0c040 55%, #a06e10); box-shadow: 0 2px 4px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(255,255,255,0.35); animation: coinFall linear both; z-index: 8; }
+.coin::after { content: '₩'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; color: #6b4a00; }
+@keyframes coinFall { 0% { transform: translateY(0) rotateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(115vh) rotateY(1080deg) rotate(240deg); opacity: .8; } }
+/* 패배·긴박 */
+.vignette { position: absolute; inset: 0; pointer-events: none; z-index: 7; opacity: 0; transition: opacity .3s; background: radial-gradient(ellipse at center, transparent 40%, rgba(180, 20, 20, 0.55) 100%); }
+.vignette.red { opacity: 1; animation: vigOut 1.4s ease both; }
+@keyframes vigOut { 0% { opacity: 1; } 100% { opacity: 0; } }
+.me.urgent { animation: urgent .25s ease infinite alternate; }
+@keyframes urgent { from { transform: translateX(-2px); } to { transform: translateX(2px); } }
+.timer-fill.low { animation: timerBlink .5s ease infinite alternate; }
+@keyframes timerBlink { from { opacity: 1; } to { opacity: .35; } }
+.pot.tick { animation: potTick .5s ease; }
+@keyframes potTick { 0% { color: #fff; transform: scale(1.25); } 100% { color: var(--accent); transform: scale(1); } }
+@media (min-width: 720px) { .reaction { font-size: 40px; left: calc(50% - 460px); bottom: 220px; } .reaction.great { font-size: 52px; } .winfx .w-title { font-size: 90px; } }
 @keyframes shake { 0%, 100% { transform: none; } 20% { transform: translate(-4px, 2px); } 40% { transform: translate(4px, -2px); } 60% { transform: translate(-3px, 1px); } 80% { transform: translate(3px, -1px); } }
 
 /* ── 결과 · 모달 ── */
