@@ -15,7 +15,7 @@
   const MODES = {
     '2': { label: '2장 섯다', stages: ['deal:1', 'bet', 'deal:1', 'bet', 'show'], perPlayer: 2, board: 0 },
     '3': { label: '3장 섯다', stages: ['deal:2', 'bet', 'deal:1', 'choose', 'bet', 'show'], perPlayer: 3, board: 0 },
-    'holdem': { label: '홀덤 섯다', stages: ['deal:2', 'bet', 'board:2', 'bet', 'board:1', 'bet', 'show'], perPlayer: 2, board: 3 },
+    'holdem': { label: '홀덤 섯다', stages: ['deal:2', 'hide:1', 'bet', 'reveal', 'choose', 'bet', 'show'], perPlayer: 2, board: 1 },
   };
 
   class Game {
@@ -57,17 +57,17 @@
     }
 
     /* ── 플레이어 ── */
-    addPlayer(id, name) {
+    addPlayer(id, name, avatar) {
       const existing = this.player(id);
-      if (existing) { existing.connected = true; existing.name = name || existing.name; this._log(`${existing.name} 재접속`); this._touch(); return existing; }
+      if (existing) { existing.connected = true; existing.name = name || existing.name; if (avatar) existing.avatar = avatar; this._log(`${existing.name} 재접속`); this._touch(); return existing; }
       /* 탭을 닫았다 다시 온 사람: 같은 닉네임의 끊긴 자리를 이어받는다 (현재 판에 살아있지 않을 때만) */
       const ghost = this.players.find(p => !p.connected && p.name === (name || '').slice(0, 10) && !this._inLiveHand(p.id));
-      if (ghost) { this._renameId(ghost.id, id); ghost.connected = true; this._log(`${ghost.name} 재접속 (자리 이어받기)`); this._touch(); return ghost; }
+      if (ghost) { this._renameId(ghost.id, id); ghost.connected = true; if (avatar) ghost.avatar = avatar; this._log(`${ghost.name} 재접속 (자리 이어받기)`); this._touch(); return ghost; }
       const connected = this.players.filter(p => p.connected).length;
       if (connected >= this.settings.maxPlayers) return null;
       const used = new Set(this.players.map(p => p.seat));
       let seat = 0; while (used.has(seat)) seat++;
-      const p = { id, name: (name || '익명').slice(0, 10), chips: this.settings.startChips, seat, connected: true, rebuys: 0 };
+      const p = { id, name: (name || '익명').slice(0, 10), avatar: String(avatar || '').slice(0, 12), chips: this.settings.startChips, seat, connected: true, rebuys: 0 };
       this.players.push(p);
       this._log(`${p.name} 입장${this.handNo ? ' (다음 판부터 참가)' : ''}`);
       this._touch();
@@ -148,7 +148,7 @@
 
       const h = this.hand = {
         no: this.handNo, mode: this.settings.mode, dealer, participants, order: turnOrder,
-        deck: R.shuffle(this.rng), cards: {}, board: [], folded: new Set(), allin: new Set(),
+        deck: R.shuffle(this.rng), cards: {}, board: [], boardHidden: 0, folded: new Set(), allin: new Set(),
         contrib: {}, pot: carry, carry, street: 0, stageIdx: -1, stageLabel: '',
         bets: {}, curBet: 0, acted: new Set(), raises: 0, turn: null, turnAt: 0,
         chosen: {}, chooseAt: 0, result: null, actions: [],
@@ -188,11 +188,17 @@
           this._log(h.mode === '2' ? (total === 1 ? '첫 장 배분' : '두 번째 장 배분') : `${n}장 배분 (${total}장째)`);
           continue;
         }
-        if (kind === 'board') {
+        if (kind === 'hide') {                       // 가운데 공유 카드를 뒤집어 깐다
           for (let k = 0; k < n; k++) h.board.push(h.deck.pop());
-          h.street++;
-          h.stageLabel = `공유 ${h.board.length}장`;
-          this._log(`공유 카드 ${n}장 오픈 (${h.board.length}장)`);
+          h.boardHidden = h.board.length;
+          h.stageLabel = '공유 카드 대기';
+          this._log('가운데 공유 카드 1장 (뒤집힘)');
+          continue;
+        }
+        if (kind === 'reveal') {                     // 공유 카드 공개
+          h.boardHidden = 0; h.street++;
+          h.stageLabel = '공유 카드 공개';
+          this._log(`공유 카드 공개: ${R.describeOne(h.board[0])}`);
           continue;
         }
         if (kind === 'bet') {
@@ -210,7 +216,7 @@
           if (live.length <= 1) continue;
           this.phase = 'choosing'; h.turn = null; h.chosen = {}; h.chooseAt = Date.now();
           h.stageLabel = '2장 선택';
-          this._log('3장 중 2장을 고르세요');
+          this._log(h.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 2장을 고르세요');
           return;
         }
         if (kind === 'show') { h.turn = null; this._finish(this._live(), false); return; }
@@ -264,11 +270,12 @@
     }
 
     /* 3장 섯다: 3장 중 2장 선택 (idxs = 카드 인덱스 2개) */
+    pool(id) { const h = this.hand; return h.mode === 'holdem' ? h.cards[id].concat(h.boardHidden ? [] : h.board) : h.cards[id]; }
     choose(id, idxs) {
       const h = this.hand;
       if (!h || this.phase !== 'choosing' || !this._inLiveHand(id)) return { ok: false, error: '지금은 고를 수 없어요' };
       if (h.chosen[id]) return { ok: false, error: '이미 골랐어요' };
-      const cards = h.cards[id];
+      const cards = this.pool(id);
       if (!Array.isArray(idxs) || idxs.length !== 2 || idxs[0] === idxs[1] || idxs.some(i => !(i >= 0 && i < cards.length))) return { ok: false, error: '2장을 골라주세요' };
       h.chosen[id] = [cards[idxs[0]], cards[idxs[1]]];
       this._log(`${this.player(id).name}: 2장 선택 완료`);
@@ -279,7 +286,7 @@
     /* 시간 초과: 아직 안 고른 사람은 최선의 2장으로 */
     autoChoose() {
       const h = this.hand; if (!h || this.phase !== 'choosing') return;
-      for (const id of this._live()) if (!h.chosen[id]) { h.chosen[id] = R.bestPair(h.cards[id]).cards; this._log(`${this.player(id).name}: 시간 초과 → 자동 선택`); }
+      for (const id of this._live()) if (!h.chosen[id]) { h.chosen[id] = R.bestPair(this.pool(id)).cards; this._log(`${this.player(id).name}: 시간 초과 → 자동 선택`); }
       this._checkChooseDone();
       this._touch();
     }
@@ -326,10 +333,9 @@
 
     /* 쇼다운에 쓰는 2장 */
     _handCards(id) {
-      const h = this.hand; const cards = h.cards[id];
-      if (h.mode === '3') return h.chosen[id] || R.bestPair(cards).cards;
-      if (h.mode === 'holdem') return R.bestPair(cards.concat(h.board)).cards;
-      return cards;
+      const h = this.hand;
+      if (h.mode === '3' || h.mode === 'holdem') return h.chosen[id] || R.bestPair(this.pool(id)).cards;
+      return h.cards[id];
     }
 
     /* ── 정산 ── */
@@ -394,14 +400,14 @@
         const show = inHand && (p.id === forId || (isResult && h.result.revealed.includes(p.id)));
         let handName = null, best = null;
         if (show && cards.length) {
-          const pool = h.mode === 'holdem' ? cards.concat(h.board) : cards;
+          const pool = this.pool(p.id);
           if (isResult && h.result.used[p.id]) { best = h.result.used[p.id]; handName = h.result.hands[p.id] ? h.result.hands[p.id].name : null; }
-          else if (h.mode === '3' && h.chosen[p.id]) { best = h.chosen[p.id]; handName = R.evalHand(best).name; }
+          else if (h.chosen[p.id]) { best = h.chosen[p.id]; handName = R.evalHand(best).name; }
           else if (pool.length >= 2) { const b = R.bestPair(pool); best = b.cards; handName = b.hand.name; }
           else handName = R.describeOne(cards[0]);
         }
         return {
-          id: p.id, name: p.name, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys,
+          id: p.id, name: p.name, avatar: p.avatar || '', chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys,
           inHand, folded: inHand && h.folded.has(p.id), allin: inHand && h.allin.has(p.id),
           bet: inHand ? h.bets[p.id] || 0 : 0, contrib: inHand ? h.contrib[p.id] : 0,
           cards: show ? cards : null, cardCount: cards.length, hand: handName, best,
@@ -416,7 +422,8 @@
         v: this.version, phase: this.phase, settings: s, handNo: this.handNo, me: forId,
         mode: h ? h.mode : s.mode, modeLabel: MODES[h ? h.mode : s.mode].label, nextMode: s.mode, nextModeLabel: MODES[s.mode].label,
         pot: h ? h.pot : 0, street: h ? h.street : 0, stageLabel: h ? h.stageLabel : '', curBet: h ? h.curBet : 0, raises: h ? h.raises : 0,
-        board: h ? h.board : [], boardMax: MODES[h ? h.mode : s.mode].board,
+        board: h ? h.board.map((c, i) => (i < h.boardHidden ? null : c)) : [], boardMax: MODES[h ? h.mode : s.mode].board,
+        pool: me && me.cards ? this.pool(forId) : null,
         turn: h ? h.turn : null, turnAt: h ? h.turnAt : 0, chooseAt: h ? h.chooseAt : 0,
         needChoose: !!(this.phase === 'choosing' && me && me.inHand && !me.folded && !me.chosen),
         players, actions: this.actionsFor(forId),

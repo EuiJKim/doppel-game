@@ -327,31 +327,35 @@ t('3장 섯다: 선택 중 다이(접속 끊김) → 나머지만 고르면 진�
   assert.equal(g.phase, 'betting');
   assert(g.hand.folded.has('p2'));
 });
-t('홀덤 섯다: 개인 2장 + 공유 2장 → 베팅 → 공유 3장 → 베팅 → 최선 2장', () => {
+t('홀덤 섯다: 개인 2장 + 가운데 1장(뒤집힘) → 베팅 → 공개 → 3장 중 2장 선택 → 베팅', () => {
   const g = mk(['a', 'b'], { mode: 'holdem' });
   g.startHand();
-  assert.equal(g.hand.cards.p0.length, 2); assert.equal(g.hand.board.length, 0);
+  assert.equal(g.hand.cards.p0.length, 2); assert.equal(g.hand.board.length, 1); assert.equal(g.hand.boardHidden, 1);
+  assert.deepEqual(g.view('p0').board, [null]);                 // 아직 뒤집혀 있음
+  assert.equal(g.view('p0').pool.length, 2);
   g.act('p1', 'check'); g.act('p0', 'check');
-  assert.equal(g.hand.board.length, 2);
-  const v = g.view('p1');
-  assert.equal(v.board.length, 2); assert.equal(v.boardMax, 3);
-  g.act('p1', 'check'); g.act('p0', 'check');
-  assert.equal(g.hand.board.length, 3);
+  assert.equal(g.phase, 'choosing');
+  assert.equal(g.hand.boardHidden, 0);
+  assert.equal(g.view('p0').board[0], g.hand.board[0]);         // 공개됨
+  assert.equal(g.view('p0').pool.length, 3);
+  assert.equal(g.choose('p0', [0, 2]).ok, true);                // 내 1장 + 공유 카드
+  assert.deepEqual(g.hand.chosen.p0, [g.hand.cards.p0[0], g.hand.board[0]]);
+  g.autoChoose();
+  assert.equal(g.phase, 'betting');
   g.act('p1', 'check'); g.act('p0', 'check');
   assert.equal(g.phase, 'result');
   const r = g.hand.result;
-  const pool = g.hand.cards.p0.concat(g.hand.board);
-  assert.equal(r.hands.p0.score, R.bestPair(pool).hand.score);
-  assert(r.used.p0.every(c => pool.includes(c)));
+  assert.deepEqual(r.used.p0, [g.hand.cards.p0[0], g.hand.board[0]]);
+  assert.equal(r.hands.p0.name, R.evalHand(r.used.p0).name);
   assert.equal(total(g), 20000);
 });
-t('홀덤 섯다 8명도 카드가 모자라지 않는다 (16 + 3 = 19장)', () => {
+t('홀덤 섯다 8명도 카드가 모자라지 않는다 (16 + 1 = 17장)', () => {
   const g = mk(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], { mode: 'holdem', maxPlayers: 8 });
   g.startHand();
   let guard = 0;
-  while (g.phase === 'betting' && guard++ < 50) g.act(g.hand.turn, 'check');
+  while (g.inProgress() && guard++ < 60) { if (g.phase === 'choosing') g.autoChoose(); else g.act(g.hand.turn, 'check'); }
   assert.equal(g.phase, 'result');
-  assert.equal(g.hand.deck.length, 1);
+  assert.equal(g.hand.deck.length, 3);
 });
 t('게임 중 모드 변경 → 다음 판부터 적용 (진행 중인 판은 그대로), 다른 설정은 진행 중 거부', () => {
   const g = mk(['a', 'b']);
@@ -376,11 +380,11 @@ t('돈 0이면 판 밖에서 언제든 10000원 재참가, 판 안(올인)에서
   g.player('p1').chips = 0; g.hand.allin.add('p1');        // 판 안에서 올인 상태
   assert.equal(g.canRebuy('p1'), false);
 });
-t('게임 중 입장 → 다음 판부터 참가', () => {
+t('게임 중 입장 → 다음 판부터 참가, 아바타 저장', () => {
   const g = mk(['a', 'b']);
   g.startHand();
-  const p = g.addPlayer('p9', '늦게온친구');
-  assert(p);
+  const p = g.addPlayer('p9', '늦게온친구', 'dog');
+  assert(p); assert.equal(g.view('p9').players.find(x => x.id === 'p9').avatar, 'dog');
   assert(!g.hand.participants.includes('p9'));
   assert.equal(g.view('p9').players.find(x => x.id === 'p9').inHand, false);
   while (g.phase === 'betting') g.act(g.hand.turn, 'check');
@@ -418,7 +422,7 @@ t('랜덤 플레이 (3장·홀덤) 300판: 칩 보존, 예외 없음', () => {
       while (g.inProgress() && guard++ < 300) {
         if (g.phase === 'choosing') {
           const live = g.hand.order.filter(id => !g.hand.folded.has(id) && !g.hand.chosen[id]);
-          if (rng() < 0.3) g.autoChoose(); else { const id = live[0]; const a = Math.floor(rng() * 3); g.choose(id, [a, (a + 1 + Math.floor(rng() * 2)) % 3]); }
+          if (rng() < 0.3) g.autoChoose(); else { const id = live[0]; const a = Math.floor(rng() * 3); assert(g.choose(id, [a, (a + 1 + Math.floor(rng() * 2)) % 3]).ok); }
           continue;
         }
         const opts = g.actionsFor(g.hand.turn);
