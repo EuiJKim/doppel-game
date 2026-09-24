@@ -27,7 +27,17 @@ const SeotdaNet = (() => {
     return {
       debug: 0,
       ...(customServer() || {}),
-      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] },
+      /* STUN만으로는 이동통신망(CGNAT)·회사망에서 직접 연결이 안 되는 경우가 많다 → 공개 TURN 릴레이(Open Relay)를 폴백으로 */
+      config: {
+        iceServers: [
+          { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+          { urls: 'stun:openrelay.metered.ca:80' },
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ],
+        iceCandidatePoolSize: 4,
+      },
     };
   }
 
@@ -54,6 +64,15 @@ const SeotdaNet = (() => {
       this.closed = false;
     }
     start() {
+      /* 탭을 그냥 닫으면 WebRTC 'close'가 안 오는 브라우저가 많다 → 3초마다 하트비트, 10초 무응답이면 끊김 처리 */
+      this.lastSeen = new Map();
+      this.hb = setInterval(() => {
+        const now = Date.now();
+        for (const [pid, c] of this.conns) {
+          if (now - (this.lastSeen.get(pid) || now) > 10000) { try { c.close(); } catch (e) { } this.conns.delete(pid); this.lastSeen.delete(pid); this.h.onLeave(pid); continue; }
+          if (c.open) { try { c.send({ t: 'hb' }); } catch (e) { } }
+        }
+      }, 3000);
       this.peer = new Peer(PREFIX + this.code, peerOptions());
       this.peer.on('open', () => this.h.onOpen && this.h.onOpen(this.code));
       this.peer.on('error', err => this.h.onError && this.h.onError(errorText(err), err));
@@ -64,13 +83,16 @@ const SeotdaNet = (() => {
       let pid = null;
       conn.on('data', msg => {
         if (!msg || typeof msg !== 'object') return;
+        if (pid) this.lastSeen.set(pid, Date.now());
+        if (msg.t === 'hb') return;
+        if (msg.t === 'bye') { if (pid && this.conns.get(pid) === conn) { this.conns.delete(pid); this.h.onLeave(pid); pid = null; } try { conn.close(); } catch (e) { } return; }
         if (msg.t === 'join') {
           if (pid) return;
           pid = String(msg.token || '').slice(0, 24);
           if (!pid) { conn.send({ t: 'err', msg: '잘못된 접속' }); return; }
           const old = this.conns.get(pid);
           if (old && old !== conn) { try { old.close(); } catch (e) { } }
-          this.conns.set(pid, conn);
+          this.conns.set(pid, conn); this.lastSeen.set(pid, Date.now());
           const ok = this.h.onJoin(pid, String(msg.name || '').slice(0, 10));
           if (!ok) { conn.send({ t: 'err', msg: '방이 꽉 찼어요', fatal: true }); setTimeout(() => conn.close(), 300); this.conns.delete(pid); pid = null; return; }
           conn.send({ t: 'welcome', pid, code: this.code });
@@ -85,7 +107,7 @@ const SeotdaNet = (() => {
     send(pid, msg) { const c = this.conns.get(pid); if (c && c.open) { try { c.send(msg); } catch (e) { } } }
     broadcast(msg) { for (const pid of this.conns.keys()) this.send(pid, msg); }
     kick(pid) { const c = this.conns.get(pid); if (c) { this.send(pid, { t: 'err', msg: '방장이 내보냈어요', fatal: true }); setTimeout(() => c.close(), 300); } }
-    close() { this.closed = true; try { this.peer && this.peer.destroy(); } catch (e) { } }
+    close() { this.closed = true; clearInterval(this.hb); try { this.peer && this.peer.destroy(); } catch (e) { } }
   }
 
   /* ── 클라이언트 ── */
@@ -94,7 +116,17 @@ const SeotdaNet = (() => {
       this.code = code; this.name = name; this.token = token; this.h = h;
       this.peer = null; this.conn = null; this.closed = false; this.tries = 0; this.wasOpen = false;
     }
+    _status(msg) { this.h.onStatus && this.h.onStatus(msg); }
     connect() {
+      this._status('연결 서버에 접속 중…');
+      this.lastSeen = Date.now();
+      this.hb = setInterval(() => {
+        if (this.closed || !this.wasOpen) return;
+        if (this.conn && this.conn.open && Date.now() - this.lastSeen > 12000) { this.lastSeen = Date.now(); try { this.conn.close(); } catch (e) { } this._retry(); }
+      }, 3000);
+      /* 탭을 닫거나 다른 앱으로 완전히 나갈 때 방장에게 즉시 알린다 */
+      this._bye = () => { try { if (this.conn && this.conn.open) this.conn.send({ t: 'bye' }); } catch (e) { } };
+      window.addEventListener('pagehide', this._bye);
       this.peer = new Peer(undefined, peerOptions());
       this.peer.on('open', () => this._dial());
       this.peer.on('error', err => {
@@ -105,17 +137,31 @@ const SeotdaNet = (() => {
     }
     _dial() {
       if (this.closed) return;
+      this._status(this.wasOpen ? '방장과 다시 연결 중…' : '방을 찾는 중…');
       const conn = this.conn = this.peer.connect(PREFIX + this.code, { reliable: true });
-      let opened = false;
+      let opened = false, firstFail = this.firstFail || 0;
+      conn.on('iceStateChanged', st => { if (!opened && (st === 'checking' || st === 'connected')) this._status('방장과 직접 연결 중… (네트워크에 따라 10초 정도 걸릴 수 있어요)'); });
       conn.on('open', () => {
         opened = true; this.wasOpen = true; this.tries = 0;
         conn.send({ t: 'join', name: this.name, token: this.token });
         this.h.onOpen && this.h.onOpen();
       });
-      conn.on('data', msg => { if (msg && typeof msg === 'object') this.h.onMessage(msg); });
+      conn.on('data', msg => {
+        if (!msg || typeof msg !== 'object') return;
+        this.lastSeen = Date.now();
+        if (msg.t === 'hb') { try { conn.send({ t: 'hb' }); } catch (e) { } return; }
+        this.h.onMessage(msg);
+      });
       conn.on('close', () => { if (opened) this._retry(); });
       conn.on('error', () => { if (!opened) this._retry(); });
-      setTimeout(() => { if (!opened && !this.closed && this.conn === conn) { try { conn.close(); } catch (e) { } if (!this.wasOpen) this.h.onError && this.h.onError('방에 연결하지 못했어요. 코드를 확인해 주세요.'); else this._retry(); } }, 12000);
+      setTimeout(() => {
+        if (opened || this.closed || this.conn !== conn) return;
+        try { conn.close(); } catch (e) { }
+        if (this.wasOpen) { this._retry(); return; }
+        /* 첫 연결 실패: 한 번 더 시도(시그널링 지연·ICE 실패 대비), 그래도 안 되면 원인별 안내 */
+        if (!this.firstFail) { this.firstFail = 1; this._status('연결이 늦어져 다시 시도 중…'); this._dial(); return; }
+        this.h.onError && this.h.onError('방에 연결하지 못했어요. ① 방 코드가 맞는지 ② 방장 화면이 열려 있는지 ③ 방장과 같은 브라우저의 다른 탭이 아닌지 확인해 주세요. 이동통신망이면 와이파이로 바꿔 보세요.');
+      }, 15000);
     }
     _retry() {
       if (this.closed) return;
@@ -125,7 +171,7 @@ const SeotdaNet = (() => {
       setTimeout(() => this._dial(), 1500 * this.tries);
     }
     send(msg) { if (this.conn && this.conn.open) { try { this.conn.send(msg); } catch (e) { } } }
-    close() { this.closed = true; try { this.peer && this.peer.destroy(); } catch (e) { } }
+    close() { this.closed = true; clearInterval(this.hb); if (this._bye) { this._bye(); window.removeEventListener('pagehide', this._bye); } try { this.peer && this.peer.destroy(); } catch (e) { } }
   }
 
   return { Host, Client, makeCode, normCode, PREFIX, customServer };

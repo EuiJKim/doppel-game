@@ -60,6 +60,9 @@
     addPlayer(id, name) {
       const existing = this.player(id);
       if (existing) { existing.connected = true; existing.name = name || existing.name; this._log(`${existing.name} 재접속`); this._touch(); return existing; }
+      /* 탭을 닫았다 다시 온 사람: 같은 닉네임의 끊긴 자리를 이어받는다 (현재 판에 살아있지 않을 때만) */
+      const ghost = this.players.find(p => !p.connected && p.name === (name || '').slice(0, 10) && !this._inLiveHand(p.id));
+      if (ghost) { this._renameId(ghost.id, id); ghost.connected = true; this._log(`${ghost.name} 재접속 (자리 이어받기)`); this._touch(); return ghost; }
       const connected = this.players.filter(p => p.connected).length;
       if (connected >= this.settings.maxPlayers) return null;
       const used = new Set(this.players.map(p => p.seat));
@@ -69,6 +72,20 @@
       this._log(`${p.name} 입장${this.handNo ? ' (다음 판부터 참가)' : ''}`);
       this._touch();
       return p;
+    }
+    _renameId(oldId, newId) {
+      const p = this.player(oldId); if (!p) return; p.id = newId;
+      const h = this.hand; if (!h) return;
+      const ren = arr => { const i = arr.indexOf(oldId); if (i >= 0) arr[i] = newId; };
+      const renObj = o => { if (o && Object.prototype.hasOwnProperty.call(o, oldId)) { o[newId] = o[oldId]; delete o[oldId]; } };
+      const renSet = st => { if (st.has(oldId)) { st.delete(oldId); st.add(newId); } };
+      ren(h.participants); ren(h.order);
+      [h.cards, h.contrib, h.bets, h.chosen].forEach(renObj);
+      [h.folded, h.allin, h.acted].forEach(renSet);
+      if (h.dealer === oldId) h.dealer = newId;
+      if (h.turn === oldId) h.turn = newId;
+      const r = h.result;
+      if (r) { ren(r.winners); ren(r.revealed); if (r.by === oldId) r.by = newId; if (r.caught) ren(r.caught); [r.hands, r.used, r.payouts].forEach(renObj); }
     }
     _inLiveHand(id) { const h = this.hand; return !!(h && this.inProgress() && h.participants.includes(id) && !h.folded.has(id)); }
     disconnectPlayer(id) {
