@@ -176,6 +176,9 @@ const SeotdaCards = (() => {
     <text x="50" y="86" font-size="16" text-anchor="middle" fill="#e6b422" font-family="serif" font-weight="700" opacity=".9">花</text>
   </svg>`;
 
-  return { svg, face, fallback, BACK };
+  const BACK_SVG = BACK;
+  const BACK_IMG = `<img src="cards/back.png" alt="뒷면" draggable="false" onerror="SeotdaCards.fallbackBack(this)">`;
+  function fallbackBack(img) { const wrap = document.createElement('div'); wrap.innerHTML = BACK_SVG; img.replaceWith(wrap.firstElementChild); }
+  return { svg, face, fallback, fallbackBack, BACK: BACK_IMG, BACK_SVG };
 })();
 if (typeof module === 'object' && module.exports) module.exports = SeotdaCards;

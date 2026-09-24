@@ -8,8 +8,11 @@
   const R = SeotdaRules, E = SeotdaEngine, N = SeotdaNet, CARDS = SeotdaCards;
   const LS = { name: 'seotda_name', token: 'seotda_token', mute: 'seotda_mute', peek: 'seotda_peek' };
 
-  let token = localStorage.getItem(LS.token);
-  if (!token) { token = 'u' + N.makeCode(10).toLowerCase(); localStorage.setItem(LS.token, token); }
+  /* 토큰은 탭 단위(sessionStorage): 같은 브라우저에서 방장 탭 + 참가 탭을 열어도 다른 사람으로 잡힌다.
+   * 새로고침은 같은 탭이라 같은 자리로 복귀. 탭을 닫았다 다시 열면 같은 닉네임의 빈자리를 이어받는다(엔진). */
+  let token = null;
+  try { token = sessionStorage.getItem(LS.token); } catch (e) { }
+  if (!token) { token = 'u' + N.makeCode(10).toLowerCase(); try { sessionStorage.setItem(LS.token, token); } catch (e) { } }
 
   let role = null, host = null, client = null, game = null;
   let myId = null, code = null, myName = '';
@@ -160,7 +163,8 @@
     $('connect-msg').textContent = `방 ${c}에 연결 중…`;
     show('screen-connect');
     client = new N.Client(c, name, token, {
-      onOpen: () => { },
+      onOpen: () => { $('connect-msg').textContent = '연결됐어요. 방 정보를 받는 중…'; },
+      onStatus: msg => { if (!view) $('connect-msg').textContent = msg; },
       onMessage: msg => {
         if (msg.t === 'state') receiveView(msg.view);
         else if (msg.t === 'chat') addChat(msg.line);

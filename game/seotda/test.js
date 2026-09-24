@@ -387,6 +387,25 @@ t('게임 중 입장 → 다음 판부터 참가', () => {
   g.startHand();
   assert(g.hand.participants.includes('p9'));
 });
+t('탭을 닫고 새 토큰으로 돌아오면 같은 닉네임의 끊긴 자리를 이어받는다', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand();
+  g.act('p1', 'die');                 // b 다이
+  g.disconnectPlayer('p1');           // 그리고 접속 끊김
+  const p = g.addPlayer('newtoken', 'b');
+  assert.equal(p.id, 'newtoken'); assert.equal(g.players.length, 3);
+  assert(g.hand.participants.includes('newtoken') && !g.hand.participants.includes('p1'));
+  assert(g.hand.folded.has('newtoken'));
+  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  assert.equal(g.phase, 'result');
+  assert.equal(total(g), 30000);
+  // 살아있는 사람의 자리는 못 뺏는다 → 새 자리
+  const g2 = mk(['a', 'b']);
+  g2.startHand();
+  g2.player('p1').connected = false;
+  const q = g2.addPlayer('other', 'b');
+  assert.equal(q.seat, 2);
+});
 t('랜덤 플레이 (3장·홀덤) 300판: 칩 보존, 예외 없음', () => {
   for (const mode of ['3', 'holdem']) {
     const g = mk(['a', 'b', 'c', 'd', 'e'], { mode, maxRaises: 4 }, 11);
