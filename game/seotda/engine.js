@@ -10,7 +10,7 @@
 
   const ANTE = 100, START_CHIPS = 10000;
   const DEFAULTS = { mode: '2', ante: ANTE, startChips: START_CHIPS, special: true, maxRaises: 3, turnSec: 30, maxPlayers: 6 };
-  const ACTION_LABEL = { check: '체크', call: '콜', ping: '삥', ddadang: '따당', quarter: '쿼터', half: '하프', die: '다이' };
+  const ACTION_LABEL = { check: '체크', call: '콜', ping: '삥', ddadang: '따당', quarter: '쿼터', half: '하프', allin: '올인', die: '다이' };
   /* 스테이지: deal:n(개인 카드 n장) · board:n(공유 카드 n장) · bet · choose(3장 중 2장) · show */
   const MODES = {
     '2': { label: '2장 섯다', stages: ['deal:1', 'bet', 'deal:1', 'bet', 'show'], perPlayer: 2, board: 0 },
@@ -244,6 +244,10 @@
         if (h.curBet === 0) add('ping', s.ante); else add('ddadang', h.curBet * 2);
         add('quarter', h.curBet + Math.max(s.ante, Math.floor(potAfterCall / 4)));
         add('half', h.curBet + Math.max(s.ante, Math.floor(potAfterCall / 2)));
+        /* 올인: 남은 돈 전부. 다른 레이즈가 칩 부족으로 같은 금액이 되면 그쪽을 빼고 올인만 남긴다 */
+        const allTo = h.bets[id] + p.chips;
+        for (let i = list.length - 1; i >= 0; i--) if (list[i].to === allTo) list.splice(i, 1);
+        list.push({ type: 'allin', label: '올인', amount: p.chips, to: allTo });
       }
       list.push({ type: 'die', label: '다이', amount: 0 });
       return list;
