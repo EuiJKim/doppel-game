@@ -40,7 +40,9 @@
     inProgress() { return this.phase === 'betting' || this.phase === 'choosing'; }
     mode() { return MODES[this.settings.mode]; }
     updateSettings(patch) {
-      if (this.inProgress()) return false;
+      /* 모드는 다음 판부터 적용되므로 판 중에도 바꿀 수 있다. 나머지는 판이 끝난 뒤에만 */
+      const onlyMode = Object.keys(patch).every(k => k === 'mode');
+      if (this.inProgress() && !onlyMode) return false;
       const s = { ...this.settings, ...patch };
       s.ante = ANTE; s.startChips = START_CHIPS;                       // 고정
       if (!MODES[s.mode]) s.mode = this.settings.mode;

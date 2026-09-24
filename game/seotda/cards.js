@@ -1,4 +1,4 @@
-/* 섯다 — 화투 카드 SVG 렌더 (이미지 파일 0, 전부 코드로 그린다)
+/* 섯다 — 화투 카드 렌더. 앞면은 cards/*.png (실사 화투 20장), 뒷면과 폴백 도안은 SVG
  * viewBox 0 0 100 160. 전통 화투 도안을 단순화한 벡터: 송학·매조·벚꽃·흑싸리·난초·모란·홍싸리·공산·국화·단풍
  */
 const SeotdaCards = (() => {
@@ -157,6 +157,15 @@ const SeotdaCards = (() => {
     if (!cache[key]) cache[key] = ART[key] ? ART[key]() : frame('');
     return cache[key];
   }
+  /* 앞면: cards/{월}{종류}.png (실사 화투). 이미지를 못 불러오면 SVG 도안으로 폴백 */
+  function face(card) {
+    return `<img src="cards/${card.m}${card.k}.png" alt="${card.m}월 ${card.k}" draggable="false" data-m="${card.m}" data-k="${card.k}" onerror="SeotdaCards.fallback(this)">`;
+  }
+  function fallback(img) {
+    const c = { m: +img.dataset.m, k: img.dataset.k };
+    const wrap = document.createElement('div'); wrap.innerHTML = svg(c);
+    img.replaceWith(wrap.firstElementChild);
+  }
   /* 뒷면: 전통 홍색 + 격자 무늬 */
   const BACK = `<svg viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
     <defs><pattern id="bk" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#a51d1d"/><rect width="4" height="8" fill="#8f1616"/></pattern></defs>
@@ -167,6 +176,6 @@ const SeotdaCards = (() => {
     <text x="50" y="86" font-size="16" text-anchor="middle" fill="#e6b422" font-family="serif" font-weight="700" opacity=".9">花</text>
   </svg>`;
 
-  return { svg, BACK };
+  return { svg, face, fallback, BACK };
 })();
 if (typeof module === 'object' && module.exports) module.exports = SeotdaCards;

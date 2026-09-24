@@ -353,12 +353,13 @@ t('홀덤 섯다 8명도 카드가 모자라지 않는다 (16 + 3 = 19장)', () 
   assert.equal(g.phase, 'result');
   assert.equal(g.hand.deck.length, 1);
 });
-t('게임 중 모드 변경 → 다음 판부터 적용, 진행 중엔 거부', () => {
+t('게임 중 모드 변경 → 다음 판부터 적용 (진행 중인 판은 그대로), 다른 설정은 진행 중 거부', () => {
   const g = mk(['a', 'b']);
   g.startHand();
-  assert.equal(g.updateSettings({ mode: '3' }), false);
-  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  assert.equal(g.updateSettings({ turnSec: 5 }), false);
   assert.equal(g.updateSettings({ mode: '3' }), true);
+  assert.equal(g.hand.mode, '2');
+  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
   assert.equal(g.view('p0').nextModeLabel, '3장 섯다');
   g.startHand();
   assert.equal(g.hand.mode, '3');

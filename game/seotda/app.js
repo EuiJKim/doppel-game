@@ -21,7 +21,7 @@
   let peekMode = localStorage.getItem(LS.peek) || 'up';
   let revealed = new Set(), revealedHand = 0;   // 내가 연 카드 id (판마다 초기화)
   let selected = [];                            // 3장 섯다 선택 인덱스
-  let meCardsKey = '';
+  let meCardsKey = '', peekActive = false, peekPending = false;
   let rebuyDismissed = 0;
 
   /* ── 소리 (합성) ── */
@@ -63,7 +63,7 @@
   /* ── 카드 ── */
   function cardHtml(id, size, extra) {
     const c = R.cardById(id);
-    return `<div class="card ${size || ''} ${extra || ''}" data-cid="${id}" title="${c.m}월 ${c.name} ${c.k === '열' ? '열끗' : c.k}"><div class="face">${CARDS.svg(c)}</div></div>`;
+    return `<div class="card ${size || ''} ${extra || ''}" data-cid="${id}" title="${c.m}월 ${c.name} ${c.k === '열' ? '열끗' : c.k}"><div class="face">${CARDS.face(c)}</div></div>`;
   }
   function backHtml(size, extra) { return `<div class="card back ${size || ''} ${extra || ''}">${CARDS.BACK}</div>`; }
   function cardsHtml(p, size, usedIds) {
@@ -234,6 +234,11 @@
     $('top-code').textContent = code;
     $('top-hand').textContent = view.handNo ? `${view.handNo}판 · ${view.stageLabel}` : '';
     $('mode-tag').textContent = view.modeLabel;
+    const topSeg = $('top-mode');
+    if (isHost) {
+      topSeg.classList.remove('hidden');
+      topSeg.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); if (!b.onclick) b.onclick = () => { doSettings({ mode: b.dataset.mode }); if (view.phase === 'betting' || view.phase === 'choosing') toast(`다음 판부터 ${E.MODES[b.dataset.mode].label}`); }; });
+    } else topSeg.classList.add('hidden');
     $('pot').textContent = fmt(view.pot);
 
     /* 상대 자리 */
@@ -354,7 +359,8 @@
     const canPick = view.phase === 'choosing' && view.needChoose;
     const allRevealed = me.cards.every(c => revealed.has(c));
     const key = [me.cards.join(','), me.cards.map(c => revealed.has(c) ? 1 : 0).join(''), selected.join(','), canPick ? 1 : 0, allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase].join('|');
-    if (key !== meCardsKey) {
+    if (key !== meCardsKey && peekActive) peekPending = true;   // 쪼는 중엔 카드 DOM을 갈아끼우지 않는다
+    else if (key !== meCardsKey) {
       meCardsKey = key;
       const prevCount = box.querySelectorAll('.card').length;
       box.innerHTML = me.cards.map((c, i) => {
@@ -395,12 +401,13 @@
   const PEEK_LABEL = { up: '위로', side: '옆으로', corner: '모서리', flip: '뒤집기', slow: '살살' };
   const PEEK_HINT = { up: '↑ 밀어 올려요', side: '→ 밀어요', corner: '↗ 모서리를 접어요', flip: '탭해서 뒤집기', slow: '꾹 누르고 있어요' };
 
+  function peekEnd() { peekActive = false; if (peekPending) { peekPending = false; meCardsKey = ''; if (view) renderTable(); } }
   function finishReveal(el, flip) {
     const cid = +el.dataset.cid;
     if (revealed.has(cid)) return;
     revealed.add(cid);
     Snd.reveal();
-    const done = () => { meCardsKey = ''; if (view) renderTable(); };
+    const done = () => { peekActive = false; peekPending = false; meCardsKey = ''; if (view) renderTable(); };
     if (flip) {
       el.classList.remove('tremble'); el.classList.add('flipping');
       setTimeout(() => { const cv = el.querySelector('.cover'); if (cv) cv.remove(); }, 300);
@@ -410,7 +417,7 @@
   function bindPeek(el) {
     const cover = el.querySelector('.cover'); if (!cover) return;
     const mode = peekMode;
-    let x0 = 0, y0 = 0, p = 0, active = false, raf = null;
+    let x0 = 0, y0 = 0, p = 0, active = false, raf = null, slowT0 = 0;
     const apply = (v) => {
       p = Math.max(0, Math.min(1, v));
       if (mode === 'up' || mode === 'slow') cover.style.transform = `translateY(${-p * 100}%)`;
@@ -420,21 +427,21 @@
     const settle = () => {
       cover.classList.add('snap');
       if (p > (mode === 'slow' ? 0.98 : 0.55)) { apply(1); finishReveal(el, false); }
-      else { apply(0); setTimeout(() => cover.classList.remove('snap'), 260); }
+      else { apply(0); setTimeout(() => { cover.classList.remove('snap'); peekEnd(); }, 260); }
     };
     if (mode === 'flip') { el.addEventListener('pointerdown', e => { e.preventDefault(); finishReveal(el, true); }); return; }
     el.addEventListener('pointerdown', e => {
-      e.preventDefault(); active = true; x0 = e.clientX; y0 = e.clientY; cover.classList.remove('snap');
+      e.preventDefault(); active = true; peekActive = true; x0 = e.clientX; y0 = e.clientY; cover.classList.remove('snap');
       try { el.setPointerCapture(e.pointerId); } catch (_) { }
       Snd.peek();
       if (mode === 'slow') {
         el.classList.add('tremble');
-        let last = performance.now();
+        const t0 = performance.now(); slowT0 = t0;
         const step = (t) => {
           if (!active) return;
-          const dt = Math.min(50, t - last); last = t;
-          apply(p + dt / 2600 * (0.6 + Math.random() * 0.8));
-          if (p >= 1) { active = false; el.classList.remove('tremble'); finishReveal(el, false); return; }
+          /* 경과 시간 기준(프레임이 밀려도 진행) + 약간의 흔들림 */
+          apply((t - t0) / 2600 + (Math.random() - 0.5) * 0.02);
+          if ((t - t0) >= 2600) { active = false; el.classList.remove('tremble'); apply(1); finishReveal(el, false); return; }
           raf = requestAnimationFrame(step);
         };
         raf = requestAnimationFrame(step);
@@ -447,8 +454,9 @@
       else if (mode === 'side') apply((e.clientX - x0) / w);
       else if (mode === 'corner') apply(((x0 - e.clientX) + (y0 - e.clientY)) / (h + w) * 1.6);
     });
-    const end = () => { if (!active) return; active = false; if (raf) cancelAnimationFrame(raf); el.classList.remove('tremble'); settle(); };
-    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('lostpointercapture', end);
+    const end = () => { if (!active) return; active = false; if (raf) cancelAnimationFrame(raf); el.classList.remove('tremble'); if (mode === 'slow') p = Math.min(1, (performance.now() - slowT0) / 2600); settle(); };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    el.addEventListener('lostpointercapture', () => { if (el.isConnected) end(); });
   }
 
   /* ── 이펙트: 뷰 변화를 비교해서 연출 ── */
