@@ -96,6 +96,8 @@
   }
   let streak = 0, renderedTurn = null, armedTurnAt = 0, lastTickSec = -1;
   let sd = null, wakeLock = null;   // sd: 쇼다운 순차 공개 상태
+  let lastSnap = null, migrating = false, takeoverTimer = null;   // 방장 이전
+  const QUICK = ['ㅋㅋㅋ', '빨리 해', '블러핑이지?', '올인 가자', '아 망했다', 'ㄱㄱ', '한 판 더'];
 
   /* ── BGM: 합성 긴장감 루프 (A단조 베이스 + 하이햇 + 패드, 내 차례엔 심장박동) ── */
   const Bgm = (() => {
@@ -179,6 +181,8 @@
     if (role === 'host') hostChat(myName, text); else client.send({ t: 'chat', text });
   }
   function doStart() { if (role !== 'host') return; inSettings = false; if (!game.startHand()) toast('돈이 있는 사람이 2명 이상 있어야 시작할 수 있어요'); }
+  function doAway(v) { if (role === 'host') game.setAway(myId, v); else client.send({ t: 'away', away: !!v }); }
+  function doExtend() { if (role === 'host') game.extendTurn(myId); else client.send({ t: 'extend' }); }
   function doSettings(patch) { if (role !== 'host') return; if (!game.updateSettings(patch)) toast('판이 끝난 뒤에 바꿀 수 있어요'); }
 
   /* ── 호스트 ── */
@@ -192,9 +196,30 @@
     return v;
   }
   function hostBroadcast() {
-    for (const p of game.players) if (p.id !== myId && p.connected) host.send(p.id, { t: 'state', view: withTimer(game.view(p.id)) });
+    const snap = game.snapshot(myId);   // 카드는 없다. 방장이 끊기면 이걸로 다음 사람이 방을 이어받는다
+    for (const p of game.players) if (p.id !== myId && p.connected) host.send(p.id, { t: 'state', view: withTimer(game.view(p.id)), snap });
     receiveView(withTimer(game.view(myId)));
     scheduleHostTimer();
+  }
+  function hostHandlers(onFatal) {
+    return {
+      onOpen: () => { hostBroadcast(); },
+      onJoin: (pid, nm, av) => !!game.addPlayer(pid, nm, CHARS[av] ? av : 'dog'),
+      onLeave: pid => game.disconnectPlayer(pid),
+      onMessage: (pid, msg) => {
+        const p = game.player(pid); if (!p) return;
+        if (msg.t === 'act') game.act(pid, String(msg.type));
+        else if (msg.t === 'choose') game.choose(pid, Array.isArray(msg.idxs) ? msg.idxs.map(Number) : []);
+        else if (msg.t === 'rebuy') game.rebuy(pid);
+        else if (msg.t === 'away') game.setAway(pid, !!msg.away);
+        else if (msg.t === 'extend') game.extendTurn(pid);
+        else if (msg.t === 'chat') hostChat(p.name, String(msg.text || '').slice(0, 60));
+      },
+      onError: (msg, err) => {
+        if (err && err.type === 'unavailable-id') { onFatal(err); return; }
+        if (!view) goHome(msg); else toast(msg, 3000);
+      },
+    };
   }
   function scheduleHostTimer() {
     clearTimeout(hostTimer);
@@ -220,22 +245,7 @@
     game.onChange = hostBroadcast;
     $('connect-msg').textContent = '방을 여는 중…';
     show('screen-connect');
-    host = new N.Host(code, {
-      onOpen: () => { hostBroadcast(); },
-      onJoin: (pid, nm, av) => !!game.addPlayer(pid, nm, CHARS[av] ? av : 'dog'),
-      onLeave: pid => game.disconnectPlayer(pid),
-      onMessage: (pid, msg) => {
-        const p = game.player(pid); if (!p) return;
-        if (msg.t === 'act') game.act(pid, String(msg.type));
-        else if (msg.t === 'choose') game.choose(pid, Array.isArray(msg.idxs) ? msg.idxs.map(Number) : []);
-        else if (msg.t === 'rebuy') game.rebuy(pid);
-        else if (msg.t === 'chat') hostChat(p.name, String(msg.text || '').slice(0, 60));
-      },
-      onError: (msg, err) => {
-        if (err && err.type === 'unavailable-id') { host.close(); host = null; setTimeout(() => createRoom(name), 200); return; }
-        if (!view) goHome(msg); else toast(msg, 3000);
-      },
-    });
+    host = new N.Host(code, hostHandlers(() => { host.close(); host = null; setTimeout(() => createRoom(name), 200); }));
     host.start();
   }
 
@@ -247,8 +257,9 @@
     client = new N.Client(c, name, token, {
       onOpen: () => { $('connect-msg').textContent = '연결됐어요. 방 정보를 받는 중…'; },
       onStatus: msg => { if (!view) { $('connect-msg').textContent = msg; $('connect-hint').textContent = /직접 연결|중계/.test(msg) ? (inApp ? '카카오톡 등 앱 안 브라우저면 Safari/Chrome으로 열어 주세요' : '8초 넘게 걸리면 중계 서버로 자동 전환됩니다') : ''; } },
+      onHostDown: onHostDown,
       onMessage: msg => {
-        if (msg.t === 'state') receiveView(msg.view);
+        if (msg.t === 'state') { if (msg.snap) lastSnap = msg.snap; migrating = false; clearTimeout(takeoverTimer); receiveView(msg.view); }
         else if (msg.t === 'chat') addChat(msg.line);
         else if (msg.t === 'err') { if (msg.fatal) goHome(msg.msg); else toast(msg.msg, 2500); }
         else if (msg.t === 'bye') goHome('방장이 방을 닫았어요.');
@@ -258,6 +269,36 @@
       onReconnecting: n => toast(`재접속 중… (${n})`, 1500),
     }, myChar);
     client.connect();
+  }
+
+  /* ── 방장 이전: 방장이 끊기면 자리 순서대로 다음 사람이 같은 방 코드로 방을 이어받는다 ── */
+  function onHostDown() {
+    if (role !== 'client' || migrating || !lastSnap) return;
+    migrating = true;
+    const cands = lastSnap.players.filter(p => p.connected && p.id !== lastSnap.hostId).sort((a, b) => a.seat - b.seat);
+    const rank = cands.findIndex(p => p.id === myId);
+    if (rank < 0) return;
+    const wait = rank === 0 ? 2500 : 2500 + rank * 9000;   // 1순위가 못 이어받으면 다음 순위가 9초 뒤에
+    toast(rank === 0 ? '방장 연결 끊김 — 내가 방을 이어받는 중…' : `방장 연결 끊김 — ${cands[0].name}이(가) 이어받는 중…`, 4000);
+    clearTimeout(takeoverTimer);
+    takeoverTimer = setTimeout(() => tryTakeover(), wait);
+  }
+  function tryTakeover() {
+    if (role !== 'client' || !migrating || !lastSnap) return;
+    if (client && client.conn && client.conn.open) { migrating = false; return; }   // 그 사이에 재접속됨
+    const snap = lastSnap;
+    try { client.close(); } catch (e) { } client = null;
+    role = 'host';
+    game = E.Game.restore(snap, myId);
+    game.onChange = hostBroadcast;
+    host = new N.Host(code, hostHandlers(() => {
+      /* 8번 시도해도 이전 방장 ID를 못 잡음 → 누군가 이미 이어받았다고 보고 클라이언트로 재참가 */
+      host.close(); host = null; role = 'client'; game = null; migrating = false;
+      joinRoom(code, myName);
+    }));
+    host.takeover = true;
+    host.start();
+    toast('방장을 이어받았어요. 친구들이 다시 붙는 중…', 4000);
   }
 
   /* ── 뷰 수신 → 이펙트 판단 → 렌더 ── */
@@ -272,7 +313,11 @@
     if (me && me.cards && (v.phase === 'choosing' || v.phase === 'result')) me.cards.forEach(c => revealed.add(c));
     render();
   }
-  function addChat(line) { chatLines.push(line); if (chatLines.length > 60) chatLines.shift(); renderLog(); }
+  function addChat(line) {
+    chatLines.push(line); if (chatLines.length > 60) chatLines.shift(); renderLog();
+    const p = view && view.players.find(x => x.name === line.from);
+    if (p) { bubbles[p.id] = { text: line.text, until: Date.now() + 3000, k: Math.random() }; if (view) renderTable(); }
+  }
 
   function render() {
     if (!view) return;
@@ -340,8 +385,10 @@
       if (!p.connected) cls.push('off');
       if (res && res.winners.includes(p.id)) cls.push('winner');
       if (view.handNo && !p.inHand) cls.push('out');
+      if (p.away) cls.push('away');
       let status = '', scls = '';
       if (!p.connected) status = '오프라인';
+      else if (p.away && !p.inHand) { status = '자리 비움'; scls = 'away'; }
       else if (view.handNo && !p.inHand) status = p.chips === 0 ? '돈 없음' : '대기';
       else if (p.folded) { status = '다이'; scls = 'die'; }
       else if (res && p.hand) status = sdGate(p) && !sd.hand[p.id] ? '…' : p.hand;
@@ -385,7 +432,7 @@
       cm.textContent = view.needChoose ? (view.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 2장을 고르세요') : '다른 사람이 고르는 중…';
       if (view.needChoose) cm.classList.add('me');
     } else if (view.phase === 'result' && res) {
-      cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? '쇼다운… 탭하면 건너뛰기' : res.redeal ? `재경기 — 판돈 ${won(view.pot)} 이월` : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
+      cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : res.redeal ? `재경기 — 판돈 ${won(view.pot)} 이월` : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
     } else cm.textContent = '';
     $('timer-bar').classList.toggle('on', !!localDeadline && (view.phase === 'betting' || view.phase === 'choosing'));
 
@@ -429,7 +476,8 @@
       const t = view.players.find(p => p.id === view.turn);
       ab.innerHTML = `<div class="wait">${me && me.folded ? '다이 — 이번 판은 구경' : me && !me.inHand ? '다음 판부터 참가해요' : t ? `${esc(t.name)} 차례를 기다리는 중` : '…'}</div>`;
     } else if (sd && sd.handNo === view.handNo && !sd.done) {
-      ab.innerHTML = `<div class="wait">쇼다운 중… (테이블을 탭하면 건너뛰기)</div>`;
+      ab.innerHTML = `<div class="wait">쇼다운 중… ${sd.cur ? esc(sd.cur) + ' 공개' : ''}</div><button class="btn" id="btn-skip-sd">건너뛰기 ▶</button>`;
+      $('btn-skip-sd').onclick = () => { if (sd && sd.skip) sd.skip(); };
     } else {
       let s = '';
       if (me && me.canRebuy) s += `<button class="btn raise" id="btn-rebuy">다시 참가<small>10,000원</small></button>`;
@@ -444,6 +492,7 @@
       if ($('mode-seg')) $('mode-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); b.onclick = () => doSettings({ mode: b.dataset.mode }); });
     }
 
+    renderQuick(me);
     animateDeals();
     /* 결과 패널 · 재참가 안내 */
     if (view.phase === 'result' && res) renderResult(me);
@@ -711,13 +760,14 @@
   }
   /* 쇼다운 순차 공개: 진 사람부터 한 장씩, 마지막 승자는 두구두구 뒤에 */
   function startShowdown(r, v, me) {
-    sd = { handNo: v.handNo, open: {}, hand: {}, done: false, timers: [] };
+    sd = { handNo: v.handNo, open: {}, hand: {}, done: false, timers: [], startedAt: Date.now(), cur: '' };
     const players = v.players.filter(p => r.revealed.includes(p.id));
     const order = players.filter(p => !r.winners.includes(p.id)).concat(players.filter(p => r.winners.includes(p.id)));
     const at = (ms, fn) => sd.timers.push(setTimeout(() => { if (sd && !sd.done && view && view.handNo === sd.handNo) fn(); }, ms));
     let t = 700;
     order.forEach((p, pi) => {
       const n = p.cardCount, last = pi === order.length - 1, mine = p.id === myId;
+      at(t, () => { sd.cur = p.name; renderTable(); });
       for (let i = 0; i < n; i++) {
         if (last && i === n - 1 && !mine) { at(t, () => Snd.drum()); t += 1100; }
         t += (i === 0 ? 350 : 700);
@@ -767,6 +817,31 @@
     }
   }
 
+  /* 퀵 채팅 · 자리 비움 · +15초 · 전적 */
+  function renderQuick(me) {
+    const q = $('quick');
+    const away = !!(me && me.away);
+    let s = '';
+    if (view.canExtend) s += `<button class="ext" data-q="extend">⏱ +15초</button>`;
+    s += `<button class="util ${away ? 'away-on' : ''}" data-q="away">${away ? '↩ 돌아오기' : '🚻 자리 비움'}</button>`;
+    s += `<button class="util" data-q="stats">📊 전적</button>`;
+    s += QUICK.map(t => `<button data-q="chat" data-t="${esc(t)}">${esc(t)}</button>`).join('');
+    if (q.dataset.k !== s) { q.innerHTML = s; q.dataset.k = s; q.querySelectorAll('button').forEach(b => b.onclick = () => {
+      const k = b.dataset.q;
+      if (k === 'extend') doExtend();
+      else if (k === 'away') doAway(!(view && view.players.find(p => p.id === myId)?.away));
+      else if (k === 'stats') openStats();
+      else if (k === 'chat') doChat(b.dataset.t);
+    }); }
+  }
+  function openStats() {
+    const rows = view.players.slice().sort((a, b) => (b.stats?.net || 0) - (a.stats?.net || 0));
+    $('stats-body').innerHTML = `<div class="st-row head"><span></span><span>이름</span><span class="r">판</span><span class="r">승</span><span class="r">순손익</span><span class="r">최고</span></div>` +
+      rows.map(p => { const s = p.stats || {}; const net = s.net || 0; return `<div class="st-row"><img class="avatar" src="${avatarSrc(p.avatar)}" alt=""><span class="nm">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}${s.maxStreak >= 2 ? ` <span class="muted">🔥${s.maxStreak}</span>` : ''}</span><span class="r">${s.hands || 0}</span><span class="r">${s.wins || 0}</span><span class="${net >= 0 ? 'pos' : 'neg'}">${net > 0 ? '+' : ''}${fmt(net)}</span><span class="best">${s.best ? esc(s.best.name) : '-'}</span></div>`; }).join('');
+    const hist = (view.history || []).slice().reverse();
+    $('stats-hist').innerHTML = hist.length ? hist.map(h => `<div class="hist-row"><span>${h.no}판</span><b>${esc(h.winners.join(', '))}</b><span class="hh">${esc(h.catcher ? h.catcher + '!' : h.hand)}</span><span>판돈 ${fmt(h.pot)}</span></div>`).join('') : '<div class="hist-row">아직 없음</div>';
+    $('stats').classList.remove('hidden');
+  }
   function renderResult(me) {
     const res = view.result; const box = $('result');
     const nameOf = id => view.players.find(p => p.id === id)?.name || '?';
@@ -836,7 +911,8 @@
     if (host) { const h = host; try { h.broadcast({ t: 'bye' }); } catch (e) { } setTimeout(() => h.close(), 200); }
     if (client) client.close();
     host = null; client = null; game = null; view = null; role = null; inSettings = false; chatLines = []; lastCardKey = {}; resultHand = 0; meCardsKey = ''; revealed = new Set(); revealedHand = 0;
-    ['result', 'drawer', 'invite', 'rebuy'].forEach(id => $(id).classList.add('hidden'));
+    ['result', 'drawer', 'invite', 'rebuy', 'stats'].forEach(id => $(id).classList.add('hidden'));
+    lastSnap = null; migrating = false; clearTimeout(takeoverTimer); $('quick').dataset.k = ''; $('quick').innerHTML = '';
     $('home-err').textContent = err || '';
     show('screen-home');
     const ps = new URLSearchParams(location.search); ps.delete('room');
@@ -920,6 +996,7 @@
   $('inv-copy-code').onclick = () => copy(code, '코드 복사됨', 'inv-copied');
   $('inv-copy-link').onclick = () => copy(inviteLink(), '초대 링크 복사됨', 'inv-copied');
   $('rb-yes').onclick = doRebuy;
+  $('stats-close').onclick = () => $('stats').classList.add('hidden');
   $('rb-no').onclick = () => { rebuyDismissed = view ? view.handNo : 0; $('rebuy').classList.add('hidden'); };
   $('btn-log').onclick = () => { $('drawer').classList.toggle('hidden'); renderLog(); $('log').scrollTop = $('log').scrollHeight; };
   $('btn-drawer-close').onclick = () => $('drawer').classList.add('hidden');
@@ -932,8 +1009,8 @@
   muteBtn.textContent = muted ? '🔇' : '🔊';
   muteBtn.onclick = () => { muted = !muted; localStorage.setItem(LS.mute, muted ? '1' : '0'); muteBtn.textContent = muted ? '🔇' : '🔊'; };
 
-  /* 쇼다운 순차 공개 건너뛰기: 테이블 탭 */
-  $('screen-table').querySelector('.felt').addEventListener('click', () => { if (sd && !sd.done && sd.skip) sd.skip(); });
+  /* 탭이 백그라운드에 있다 돌아오면(타이머가 밀림) 쇼다운 연출은 바로 마무리 */
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && sd && !sd.done && sd.skip && Date.now() - sd.startedAt > 20000) sd.skip(); });
   /* 게임 중 화면 꺼짐 방지 (방장 화면이 꺼지면 판이 멈춘다) */
   async function keepAwake() { try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) { } }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && view) keepAwake(); });

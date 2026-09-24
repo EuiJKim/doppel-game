@@ -63,6 +63,7 @@ const SeotdaNet = (() => {
       this.closed = false;
     }
     start() {
+      this.idTries = (this.idTries || 0);
       /* 탭을 그냥 닫으면 WebRTC 'close'가 안 오는 브라우저가 많다 → 3초마다 하트비트, 10초 무응답이면 끊김 처리 */
       this.lastSeen = new Map();
       this.hb = setInterval(() => {
@@ -73,8 +74,13 @@ const SeotdaNet = (() => {
         }
       }, 3000);
       this.peer = new Peer(PREFIX + this.code, peerOptions(true));
+      if (!this._down) { this._down = () => { if (!this.closed) { try { this.broadcast({ t: 'hostdown' }); } catch (e) { } } }; window.addEventListener('pagehide', this._down); }
       this.peer.on('open', () => this.h.onOpen && this.h.onOpen(this.code));
-      this.peer.on('error', err => this.h.onError && this.h.onError(errorText(err), err));
+      this.peer.on('error', err => {
+        /* 방장 이전: 이전 방장의 ID가 서버에서 아직 안 풀렸으면 2초 간격으로 최대 8번 다시 잡는다 */
+        if (err && err.type === 'unavailable-id' && this.takeover && this.idTries < 8) { this.idTries++; clearInterval(this.hb); try { this.peer.destroy(); } catch (e) { } setTimeout(() => { if (!this.closed) this.start(); }, 2000); return; }
+        this.h.onError && this.h.onError(errorText(err), err);
+      });
       this.peer.on('disconnected', () => { if (!this.closed) setTimeout(() => { try { this.peer.reconnect(); } catch (e) { } }, 1500); });
       this.peer.on('connection', conn => this._accept(conn));
     }
@@ -106,7 +112,7 @@ const SeotdaNet = (() => {
     send(pid, msg) { const c = this.conns.get(pid); if (c && c.open) { try { c.send(msg); } catch (e) { } } }
     broadcast(msg) { for (const pid of this.conns.keys()) this.send(pid, msg); }
     kick(pid) { const c = this.conns.get(pid); if (c) { this.send(pid, { t: 'err', msg: '방장이 내보냈어요', fatal: true }); setTimeout(() => c.close(), 300); } }
-    close() { this.closed = true; clearInterval(this.hb); try { this.peer && this.peer.destroy(); } catch (e) { } }
+    close() { this.closed = true; clearInterval(this.hb); if (this._down) window.removeEventListener('pagehide', this._down); try { this.peer && this.peer.destroy(); } catch (e) { } }
   }
 
   /* ── 클라이언트 ── */
@@ -144,7 +150,7 @@ const SeotdaNet = (() => {
       let opened = false, firstFail = this.firstFail || 0;
       conn.on('iceStateChanged', st => { if (!opened && (st === 'checking' || st === 'connected')) this._status('방장과 직접 연결 중… (네트워크에 따라 10초 정도 걸릴 수 있어요)'); });
       conn.on('open', () => {
-        opened = true; this.wasOpen = true; this.tries = 0;
+        opened = true; this.wasOpen = true; this.tries = 0; this.lostNotified = false;
         conn.send({ t: 'join', name: this.name, token: this.token, avatar: this.avatar });
         this.h.onOpen && this.h.onOpen();
       });
@@ -152,6 +158,7 @@ const SeotdaNet = (() => {
         if (!msg || typeof msg !== 'object') return;
         this.lastSeen = Date.now();
         if (msg.t === 'hb') { try { conn.send({ t: 'hb' }); } catch (e) { } return; }
+        if (msg.t === 'hostdown') { try { conn.close(); } catch (e) { } this._retry(); return; }
         this.h.onMessage(msg);
       });
       conn.on('close', () => { if (opened) this._retry(); });
@@ -171,10 +178,11 @@ const SeotdaNet = (() => {
     }
     _retry() {
       if (this.closed) return;
-      if (this.tries >= 6) { this.h.onClose && this.h.onClose('호스트와의 연결이 끊겼어요.'); return; }
+      if (this.wasOpen && !this.lostNotified) { this.lostNotified = true; this.h.onHostDown && this.h.onHostDown(); }
+      if (this.tries >= 16) { this.h.onClose && this.h.onClose('호스트와의 연결이 끊겼어요.'); return; }
       this.tries++;
       this.h.onReconnecting && this.h.onReconnecting(this.tries);
-      setTimeout(() => this._dial(), 1500 * this.tries);
+      setTimeout(() => this._dial(), Math.min(4000, 1200 * this.tries));
     }
     send(msg) { if (this.conn && this.conn.open) { try { this.conn.send(msg); } catch (e) { } } }
     close() { this.closed = true; clearInterval(this.hb); if (this._bye) { this._bye(); window.removeEventListener('pagehide', this._bye); } try { this.peer && this.peer.destroy(); } catch (e) { } }
