@@ -301,6 +301,7 @@ input:focus { border-color: var(--accent); }
 .act-pop.die { border-color: var(--danger); color: #ff8a80; }
 .act-pop.raise { border-color: #ff6b5e; color: var(--accent); }
 .act-pop.allin { border-color: #ff3b2f; background: #5a0d0d; color: #ffd6d0; font-size: 22px; }
+.act-pop.hand { border-color: var(--accent); background: rgba(58, 38, 0, 0.9); color: #ffe08a; font-size: 20px; animation-duration: 1.8s; }
 .me .act-pop { left: 90px; top: 30%; transform: none; animation-name: actPopMe; }
 @keyframes actPop { 0% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; } 15% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -90%) scale(1); } }
 @keyframes actPopMe { 0% { transform: scale(2.2); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
