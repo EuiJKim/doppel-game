@@ -433,6 +433,8 @@
       if (p > (mode === 'slow' ? 0.98 : 0.55)) { apply(1); finishReveal(el, false); }
       else { apply(0); setTimeout(() => { cover.classList.remove('snap'); peekEnd(); }, 260); }
     };
+    el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    el.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
     if (mode === 'flip') { el.addEventListener('pointerdown', e => { e.preventDefault(); finishReveal(el, true); }); return; }
     el.addEventListener('pointerdown', e => {
       e.preventDefault(); active = true; peekActive = true; x0 = e.clientX; y0 = e.clientY; cover.classList.remove('snap');
