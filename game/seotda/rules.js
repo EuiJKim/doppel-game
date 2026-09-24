@@ -123,5 +123,15 @@
     return { redeal: false, winners: bestIds, hands };
   }
 
-  return { DECK, MONTH_NAME, cardById, shuffle, evalHand, describeOne, resolve };
+  /* N장 중 가장 좋은 2장 (3장 섯다 자동 선택 · 홀덤 섯다) */
+  function bestPair(cardIds) {
+    let best = null;
+    for (let i = 0; i < cardIds.length; i++) for (let j = i + 1; j < cardIds.length; j++) {
+      const h = evalHand([cardIds[i], cardIds[j]]);
+      if (!best || h.score > best.hand.score || (h.score === best.hand.score && h.special && !best.hand.special)) best = { cards: [cardIds[i], cardIds[j]], hand: h };
+    }
+    return best;
+  }
+
+  return { DECK, MONTH_NAME, cardById, shuffle, evalHand, describeOne, resolve, bestPair };
 });

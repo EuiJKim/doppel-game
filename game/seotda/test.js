@@ -68,7 +68,7 @@ t('동점 → 공동 승자', () => {
 console.log('엔진');
 function seeded(seed) { let s = seed; return () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; }
 function mk(names, settings, seed) {
-  const g = new Game({ ante: 100, startChips: 1000, turnSec: 0, ...settings }, seeded(seed || 7));
+  const g = new Game({ turnSec: 0, ...settings }, seeded(seed || 7));
   names.forEach((nm, i) => g.addPlayer('p' + i, nm));
   return g;
 }
@@ -84,10 +84,10 @@ t('시작 → 앤티 → 첫 장 → 딜러 다음 사람 턴', () => {
   assert(g.startHand());
   assert.equal(g.phase, 'betting');
   assert.equal(g.hand.pot, 300);
-  assert.equal(g.hand.round, 1);
+  assert.equal(g.hand.street, 1);
   assert.equal(g.hand.dealer, 'p0');
   assert.equal(g.hand.turn, 'p1');
-  g.players.forEach(p => assert.equal(p.chips, 900));
+  g.players.forEach(p => assert.equal(p.chips, 9900));
   assert(g.hand.order.every(id => g.hand.cards[id].length === 1));
 });
 t('모두 체크 → 2장째 → 모두 체크 → 쇼다운, 칩 보존', () => {
@@ -95,7 +95,7 @@ t('모두 체크 → 2장째 → 모두 체크 → 쇼다운, 칩 보존', () =>
   g.startHand();
   const before = total(g);
   for (let i = 0; i < 3; i++) assert(g.act(g.hand.turn, 'check').ok);
-  assert.equal(g.hand.round, 2);
+  assert.equal(g.hand.street, 2);
   for (let i = 0; i < 3; i++) assert(g.act(g.hand.turn, 'check').ok);
   assert.equal(g.phase, 'result');
   assert.equal(g.hand.result.revealed.length, 3);
@@ -112,7 +112,7 @@ t('삥 → 콜 → 다이 → 두 명 남아 진행', () => {
   assert.deepEqual(g.actionsFor('p2').map(a => a.type), ['call', 'ddadang', 'quarter', 'half', 'die']);
   g.act('p2', 'call');
   g.act('p0', 'die');
-  assert.equal(g.hand.round, 2);
+  assert.equal(g.hand.street, 2);
   assert.equal(g.hand.turn, 'p1');
 });
 t('전원 다이 → 남은 한 명이 팟 획득, 카드 비공개', () => {
@@ -124,7 +124,7 @@ t('전원 다이 → 남은 한 명이 팟 획득, 카드 비공개', () => {
   assert.equal(g.phase, 'result');
   assert(g.hand.result.byFold);
   assert.equal(g.hand.result.revealed.length, 0);
-  assert.equal(g.player('p1').chips, 900 + 300);
+  assert.equal(g.player('p1').chips, 9900 + 300);
 });
 t('따당은 현재 베팅의 2배, 레이즈 횟수 제한', () => {
   const g = mk(['a', 'b'], { maxRaises: 2 });
@@ -135,7 +135,8 @@ t('따당은 현재 베팅의 2배, 레이즈 횟수 제한', () => {
   assert.deepEqual(g.actionsFor('p1').map(a => a.type), ['call', 'die']);
 });
 t('올인 콜 → 베팅 스킵 후 쇼다운', () => {
-  const g = mk(['a', 'b'], { startChips: 500 });
+  const g = mk(['a', 'b']);
+  g.players.forEach(p => p.chips = 500);
   g.startHand();
   g.act('p1', 'half');                    // 팟 200 → 100 콜 + ... p1 puts 100
   g.act('p0', 'half');
@@ -153,7 +154,7 @@ t('올인 콜 → 베팅 스킵 후 쇼다운', () => {
   assert.equal(total(g), 1000);
 });
 t('사이드팟: 칩 적은 올인은 자기 몫까지만', () => {
-  const g = mk(['a', 'b', 'c'], { startChips: 1000, maxRaises: 5 });
+  const g = mk(['a', 'b', 'c'], { maxRaises: 5 });
   g.player('p2').chips = 300; // c는 가난하다
   g.startHand();               // 앤티 100씩 → p2 200 남음
   const before = total(g);
@@ -172,7 +173,7 @@ t('사이드팟: 칩 적은 올인은 자기 몫까지만', () => {
   assert.equal(paid, contributed);
 });
 t('사이드팟 강제 시나리오: 가난한 승자', () => {
-  const g = mk(['a', 'b', 'c'], { startChips: 1000, maxRaises: 5 });
+  const g = mk(['a', 'b', 'c'], { maxRaises: 5 });
   g.player('p2').chips = 200;
   g.startHand();
   // 카드 조작: p2에게 38광땡, 나머지는 끗
@@ -189,7 +190,7 @@ t('사이드팟 강제 시나리오: 가난한 승자', () => {
   assert.equal(r.payouts.p2, 600);          // 200 × 3명
   const rest = r.payouts.p0 + r.payouts.p1;
   assert(rest > 0);                         // 나머지는 p0/p1 중 높은 쪽
-  assert.equal(total(g), 2200);
+  assert.equal(total(g), 20200);
 });
 t('재경기: 구사 → 팟 이월 → 같은 사람들로 다시', () => {
   const g = mk(['a', 'b', 'c']);
@@ -205,7 +206,7 @@ t('재경기: 구사 → 팟 이월 → 같은 사람들로 다시', () => {
   assert(g.startHand());
   assert.deepEqual(g.hand.participants.sort(), ['p0', 'p1']);
   assert.equal(g.hand.pot, 300);
-  assert.equal(total(g), 3000);
+  assert.equal(total(g), 30000);
 });
 t('접속 끊김 = 다이, 로비에서는 제거', () => {
   const g = mk(['a', 'b', 'c']);
@@ -241,7 +242,7 @@ t('리바이: 칩 0일 때만', () => {
   assert.equal(g.rebuy('p0'), false);
   g.player('p0').chips = 0;
   assert.equal(g.rebuy('p0'), true);
-  assert.equal(g.player('p0').chips, 1000);
+  assert.equal(g.player('p0').chips, 10000);
 });
 t('뷰: 남의 카드는 안 보이고 내 카드는 보인다', () => {
   const g = mk(['a', 'b']);
@@ -263,7 +264,7 @@ t('딜러 순환', () => {
   assert.deepEqual(dealers, ['p0', 'p1', 'p2', 'p0']);
 });
 t('랜덤 플레이 500판: 칩 총량 보존, 예외 없음', () => {
-  const g = mk(['a', 'b', 'c', 'd', 'e', 'f'], { startChips: 2000, maxRaises: 4 }, 42);
+  const g = mk(['a', 'b', 'c', 'd', 'e', 'f'], { maxRaises: 4 }, 42);
   const rng = seeded(99);
   let hands = 0;
   for (let i = 0; i < 500; i++) {
@@ -283,6 +284,130 @@ t('랜덤 플레이 500판: 칩 총량 보존, 예외 없음', () => {
     for (const p of g.players) assert(p.chips >= 0);
   }
   assert(hands >= 400);
+});
+
+
+console.log('모드');
+t('판돈 100 · 시작금 10000 고정 (설정으로 못 바꿈)', () => {
+  const g = mk(['a', 'b'], { ante: 500, startChips: 50 });
+  assert.equal(g.settings.ante, 100); assert.equal(g.settings.startChips, 10000);
+  g.updateSettings({ ante: 1, startChips: 5 });
+  assert.equal(g.settings.ante, 100); assert.equal(g.settings.startChips, 10000);
+});
+t('3장 섯다: 2장 → 베팅 → 3장째 → 선택 → 베팅 → 쇼다운', () => {
+  const g = mk(['a', 'b', 'c'], { mode: '3' });
+  g.startHand();
+  assert.equal(g.hand.cards.p0.length, 2);
+  for (let i = 0; i < 3; i++) g.act(g.hand.turn, 'check');
+  assert.equal(g.phase, 'choosing');
+  assert.equal(g.hand.cards.p0.length, 3);
+  assert.equal(g.view('p0').needChoose, true);
+  assert.equal(g.actionsFor('p0').length, 0);
+  assert.equal(g.choose('p0', [0, 0]).ok, false);
+  assert.equal(g.choose('p0', [0, 2]).ok, true);
+  assert.equal(g.choose('p0', [0, 1]).ok, false);         // 이미 골랐음
+  assert.equal(g.view('p0').needChoose, false);
+  g.choose('p1', [1, 2]);
+  assert.equal(g.phase, 'choosing');
+  g.autoChoose();                                          // p2 시간 초과 → 자동
+  assert.equal(g.phase, 'betting');
+  for (let i = 0; i < 3; i++) g.act(g.hand.turn, 'check');
+  assert.equal(g.phase, 'result');
+  const r = g.hand.result;
+  assert.deepEqual(r.used.p0, [g.hand.cards.p0[0], g.hand.cards.p0[2]]);
+  assert.equal(R.evalHand(r.used.p0).name, r.hands.p0.name);
+  assert.equal(total(g), 30000);
+});
+t('3장 섯다: 선택 중 다이(접속 끊김) → 나머지만 고르면 진행', () => {
+  const g = mk(['a', 'b', 'c'], { mode: '3' });
+  g.startHand();
+  for (let i = 0; i < 3; i++) g.act(g.hand.turn, 'check');
+  g.choose('p0', [0, 1]); g.choose('p1', [0, 1]);
+  g.disconnectPlayer('p2');
+  assert.equal(g.phase, 'betting');
+  assert(g.hand.folded.has('p2'));
+});
+t('홀덤 섯다: 개인 2장 + 공유 2장 → 베팅 → 공유 3장 → 베팅 → 최선 2장', () => {
+  const g = mk(['a', 'b'], { mode: 'holdem' });
+  g.startHand();
+  assert.equal(g.hand.cards.p0.length, 2); assert.equal(g.hand.board.length, 0);
+  g.act('p1', 'check'); g.act('p0', 'check');
+  assert.equal(g.hand.board.length, 2);
+  const v = g.view('p1');
+  assert.equal(v.board.length, 2); assert.equal(v.boardMax, 3);
+  g.act('p1', 'check'); g.act('p0', 'check');
+  assert.equal(g.hand.board.length, 3);
+  g.act('p1', 'check'); g.act('p0', 'check');
+  assert.equal(g.phase, 'result');
+  const r = g.hand.result;
+  const pool = g.hand.cards.p0.concat(g.hand.board);
+  assert.equal(r.hands.p0.score, R.bestPair(pool).hand.score);
+  assert(r.used.p0.every(c => pool.includes(c)));
+  assert.equal(total(g), 20000);
+});
+t('홀덤 섯다 8명도 카드가 모자라지 않는다 (16 + 3 = 19장)', () => {
+  const g = mk(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], { mode: 'holdem', maxPlayers: 8 });
+  g.startHand();
+  let guard = 0;
+  while (g.phase === 'betting' && guard++ < 50) g.act(g.hand.turn, 'check');
+  assert.equal(g.phase, 'result');
+  assert.equal(g.hand.deck.length, 1);
+});
+t('게임 중 모드 변경 → 다음 판부터 적용, 진행 중엔 거부', () => {
+  const g = mk(['a', 'b']);
+  g.startHand();
+  assert.equal(g.updateSettings({ mode: '3' }), false);
+  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  assert.equal(g.updateSettings({ mode: '3' }), true);
+  assert.equal(g.view('p0').nextModeLabel, '3장 섯다');
+  g.startHand();
+  assert.equal(g.hand.mode, '3');
+  assert.equal(g.hand.cards.p0.length, 2);
+});
+t('돈 0이면 판 밖에서 언제든 10000원 재참가, 판 안(올인)에서는 불가', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.player('p2').chips = 0;                                 // 판에 못 들어감
+  g.startHand();
+  assert(!g.hand.participants.includes('p2'));
+  assert.equal(g.canRebuy('p2'), true);
+  assert.equal(g.rebuy('p2'), true);
+  assert.equal(g.player('p2').chips, 10000);
+  g.player('p1').chips = 0; g.hand.allin.add('p1');        // 판 안에서 올인 상태
+  assert.equal(g.canRebuy('p1'), false);
+});
+t('게임 중 입장 → 다음 판부터 참가', () => {
+  const g = mk(['a', 'b']);
+  g.startHand();
+  const p = g.addPlayer('p9', '늦게온친구');
+  assert(p);
+  assert(!g.hand.participants.includes('p9'));
+  assert.equal(g.view('p9').players.find(x => x.id === 'p9').inHand, false);
+  while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  g.startHand();
+  assert(g.hand.participants.includes('p9'));
+});
+t('랜덤 플레이 (3장·홀덤) 300판: 칩 보존, 예외 없음', () => {
+  for (const mode of ['3', 'holdem']) {
+    const g = mk(['a', 'b', 'c', 'd', 'e'], { mode, maxRaises: 4 }, 11);
+    const rng = seeded(5);
+    for (let i = 0; i < 300; i++) {
+      for (const p of g.players) if (p.chips === 0) g.rebuy(p.id);
+      assert(g.startHand());
+      const before = total(g);
+      let guard = 0;
+      while (g.inProgress() && guard++ < 300) {
+        if (g.phase === 'choosing') {
+          const live = g.hand.order.filter(id => !g.hand.folded.has(id) && !g.hand.chosen[id]);
+          if (rng() < 0.3) g.autoChoose(); else { const id = live[0]; const a = Math.floor(rng() * 3); g.choose(id, [a, (a + 1 + Math.floor(rng() * 2)) % 3]); }
+          continue;
+        }
+        const opts = g.actionsFor(g.hand.turn);
+        assert(g.act(g.hand.turn, opts[Math.floor(rng() * opts.length)].type).ok);
+      }
+      assert.equal(g.phase, 'result');
+      assert.equal(total(g), before);
+    }
+  }
 });
 
 console.log(`\n${n} tests passed`);
