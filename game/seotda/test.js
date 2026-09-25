@@ -21,14 +21,16 @@ t('끗 계산: 5+7 = 2끗, 4+5 = 갑오, 3+7 = 망통', () => {
   assert.equal(R.evalHand([C(4, '띠'), C(5, '띠')]).name, '갑오');
   assert.equal(R.evalHand([C(3, '광'), C(7, '띠')]).name, '망통');
 });
-t('땡잡이 = 3띠+7열', () => {
+t('땡잡이 = 3·7 어떤 조합이든', () => {
   assert.equal(R.evalHand([C(3, '띠'), C(7, '열')]).special, '땡잡이');
-  assert.equal(R.evalHand([C(3, '광'), C(7, '열')]).special, null);
+  assert.equal(R.evalHand([C(3, '광'), C(7, '열')]).special, '땡잡이');
+  assert.equal(R.evalHand([C(3, '광'), C(7, '띠')]).special, '땡잡이');
 });
-t('암행어사 = 4열+7열, 구사 = 4+9, 멍텅구리구사 = 4열+9열', () => {
+t('암행어사 = 4열+7열, 구사(49파토) = 4·9 어떤 조합이든', () => {
   assert.equal(R.evalHand([C(4, '열'), C(7, '열')]).special, '암행어사');
   assert.equal(R.evalHand([C(4, '띠'), C(9, '열')]).special, '구사');
-  assert.equal(R.evalHand([C(4, '열'), C(9, '열')]).special, '멍텅구리구사');
+  assert.equal(R.evalHand([C(4, '열'), C(9, '열')]).special, '구사');
+  assert.equal(R.evalHand([C(4, '띠'), C(9, '띠')]).special, '구사');
 });
 
 console.log('승자 결정');
@@ -48,13 +50,16 @@ t('암행어사가 18광땡을 잡고 38광땡은 못 잡는다', () => {
   assert.deepEqual(R.resolve([{ id: 'a', cards: [C(1, '광'), C(8, '광')] }, { id: 'b', cards: [C(4, '열'), C(7, '열')] }]).winners, ['b']);
   assert.deepEqual(R.resolve([{ id: 'a', cards: [C(3, '광'), C(8, '광')] }, { id: 'b', cards: [C(4, '열'), C(7, '열')] }]).winners, ['a']);
 });
-t('구사: 상대가 알리 이하면 재경기, 땡이면 아님', () => {
+t('49파토: 4·9가 있으면 상대가 뭐든 재경기', () => {
   assert.equal(R.resolve([{ id: 'a', cards: [C(1, '광'), C(2, '띠')] }, { id: 'b', cards: [C(4, '띠'), C(9, '열')] }]).redeal, true);
-  assert.equal(R.resolve([{ id: 'a', cards: [C(2, '열'), C(2, '띠')] }, { id: 'b', cards: [C(4, '띠'), C(9, '열')] }]).redeal, false);
+  assert.equal(R.resolve([{ id: 'a', cards: [C(2, '열'), C(2, '띠')] }, { id: 'b', cards: [C(4, '띠'), C(9, '열')] }]).redeal, true);
+  const r = R.resolve([{ id: 'a', cards: [C(3, '광'), C(8, '광')] }, { id: 'b', cards: [C(4, '열'), C(9, '띠')] }]);
+  assert.equal(r.redeal, true); assert.equal(r.reason, '49파토'); assert.equal(r.by, 'b');
+  assert.equal(R.resolve([{ id: 'a', cards: [C(1, '광'), C(3, '광')] }, { id: 'b', cards: [C(4, '열'), C(9, '열')] }], { special: false }).redeal, false);
 });
-t('멍텅구리구사: 장땡이면 재경기, 광땡이면 아님', () => {
-  assert.equal(R.resolve([{ id: 'a', cards: [C(10, '열'), C(10, '띠')] }, { id: 'b', cards: [C(4, '열'), C(9, '열')] }]).redeal, true);
-  assert.equal(R.resolve([{ id: 'a', cards: [C(1, '광'), C(3, '광')] }, { id: 'b', cards: [C(4, '열'), C(9, '열')] }]).redeal, false);
+t('땡잡이(3광+7띠)도 땡을 잡는다', () => {
+  const r = R.resolve([{ id: 'a', cards: [C(5, '열'), C(5, '띠')] }, { id: 'b', cards: [C(3, '광'), C(7, '띠')] }]);
+  assert.deepEqual(r.winners, ['b']); assert.equal(r.catcher, '땡잡이');
 });
 t('특수족보 OFF면 땡잡이 무시', () => {
   const r = R.resolve([{ id: 'a', cards: [C(7, '띠'), C(7, '열')] }, { id: 'b', cards: [C(3, '띠'), C(7, '열')] }], { special: false });
@@ -210,7 +215,7 @@ t('사이드팟 강제 시나리오: 가난한 승자', () => {
   assert(rest > 0);                         // 나머지는 p0/p1 중 높은 쪽
   assert.equal(total(g), 20200);
 });
-t('재경기: 구사 → 팟 이월 → 같은 사람들로 다시', () => {
+t('재경기: 49파토 → 팟 이월 → 같은 사람들로 다시', () => {
   const g = mk(['a', 'b', 'c']);
   g.startHand();
   const h = g.hand;
@@ -321,11 +326,16 @@ t('3장 섯다: 2장 → 베팅 → 3장째 → 선택 → 베팅 → 쇼다운'
   assert.equal(g.hand.cards.p0.length, 3);
   assert.equal(g.view('p0').needChoose, true);
   assert.equal(g.actionsFor('p0').length, 0);
-  assert.equal(g.choose('p0', [0, 0]).ok, false);
-  assert.equal(g.choose('p0', [0, 2]).ok, true);
-  assert.equal(g.choose('p0', [0, 1]).ok, false);         // 이미 골랐음
+  assert.equal(g.choose('p0', [5]).ok, false);
+  assert.equal(g.choose('p0', [1]).ok, true);              // 1번을 공개 → 0,2번이 내 패
+  assert.deepEqual(g.hand.chosen.p0, [g.hand.cards.p0[0], g.hand.cards.p0[2]]);
+  assert.equal(g.hand.opened.p0, g.hand.cards.p0[1]);
+  assert.equal(g.view('p1').players.find(p => p.id === 'p0').open, g.hand.cards.p0[1]);   // 남에게 공개됨
+  assert.equal(g.view('p1').players.find(p => p.id === 'p0').cards, null);                 // 나머지는 비공개
+  assert.equal(g.choose('p0', [0]).ok, false);             // 이미 골랐음
   assert.equal(g.view('p0').needChoose, false);
-  g.choose('p1', [1, 2]);
+  g.choose('p1', [1, 2]);                                   // 2장 지정 방식도 허용 → 0번 공개
+  assert.equal(g.hand.opened.p1, g.hand.cards.p1[0]);
   assert.equal(g.phase, 'choosing');
   g.autoChoose();                                          // p2 시간 초과 → 자동
   assert.equal(g.phase, 'betting');
