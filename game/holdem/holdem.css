@@ -7,8 +7,8 @@
 .card { width: 46px; height: 64px; border-radius: 5px; background: #fff; }
 .card.big { width: 70px; height: 98px; border-radius: 7px; }
 .card.mid { width: 54px; height: 76px; border-radius: 6px; }
-.board .card.mid { width: 54px; height: 76px; }
-.board .slot { width: 50px; height: 70px; border-radius: 6px; }
+.board .card.mid { width: 64px; height: 90px; border-radius: 7px; }
+.board .slot { width: 60px; height: 84px; border-radius: 7px; }
 .rrow .card { width: 32px; height: 45px; border-radius: 3px; }
 .ss-card { width: 100px; height: 140px; }
 .card-fly { width: 46px; height: 64px; }
@@ -75,21 +75,37 @@
 .deck { position: absolute; left: 10px; top: 8px; width: 32px; height: 45px; margin: 0; }
 .deck .dk { width: 32px; height: 45px; }
 .stack.mine { left: 10px; right: auto; transform: none; bottom: 6px; }
-.board .card.mid { width: 48px; height: 67px; }
-.board .slot { width: 44px; height: 62px; }
-@media (min-width: 720px) { .board .card.mid { width: 60px; height: 84px; } .board .slot { width: 56px; height: 78px; } .deck { width: 40px; height: 56px; } .deck .dk { width: 40px; height: 56px; } }
+.board .card.mid { width: 64px; height: 90px; }
+.board .slot { width: 60px; height: 84px; }
+@media (min-width: 720px) { .board .card.mid { width: 92px; height: 129px; border-radius: 9px; } .board .slot { width: 88px; height: 123px; border-radius: 9px; } .deck { width: 40px; height: 56px; } .deck .dk { width: 40px; height: 56px; } }
 .pot-row { margin-top: 2px; }
 @media (max-width: 719px) {
   .seat { min-height: 100px; padding-top: 6px; }
   .seat-cards { min-height: 56px; }
   .seat-cards .card { width: 40px; height: 56px; }
   .seat-cards .card:nth-child(2) { margin-left: -12px; }
-  .board .card.mid { width: 44px; height: 62px; }
-  .board .slot { width: 40px; height: 56px; }
-  .board { margin-bottom: 14px; min-height: 62px; gap: 4px; }
+  .board .card.mid { width: 60px; height: 84px; }
+  .board .slot { width: 56px; height: 78px; }
+  .board { margin-bottom: 14px; min-height: 84px; gap: 5px; }
+  .seat { min-height: 96px; }
+  .pot-row .pot-box { padding: 2px 12px; } .pot { font-size: 18px; }
   .center { gap: 4px; padding-bottom: 4px; }
   .center-msg { font-size: 14px; min-height: 20px; }
 }
 /* 뒤집혀 나타나는 카드: 지연 시작을 위해 inline opacity:0 을 쓰므로 키프레임에서 opacity 를 되돌린다 */
 .card.flip, .board .card.mid.flip { animation: flipShow .5s ease both; }
 @keyframes flipShow { 0% { transform: rotateY(90deg); opacity: 1; } 100% { transform: rotateY(0); opacity: 1; } }
+
+/* 보드 카드는 크게, 그림자도 진하게 (잘 보이게) */
+.board .card.mid { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.board .card.mid.used { box-shadow: 0 0 0 3px #ffd54f, 0 0 18px rgba(255, 213, 79, 0.7); }
+.board .board-label { bottom: -18px; font-size: 12px; }
+@media (max-width: 719px) {
+  .seat { min-height: 90px; gap: 2px; }
+  .seat-cards { min-height: 50px; }
+  .seat-cards .card { width: 36px; height: 50px; }
+  .seat-cards .card:nth-child(2) { margin-left: -10px; }
+  .seat .avatar { width: 32px; height: 32px; }
+  .center { padding: 4px 8px 2px; }
+  .board { margin-bottom: 12px; }
+}
