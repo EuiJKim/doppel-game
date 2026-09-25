@@ -336,22 +336,23 @@ t('3장 섯다: 2장 → 베팅 → 3장째 → 선택 → 베팅 → 쇼다운'
   assert.equal(g.view('p0').needChoose, true);
   assert.equal(g.actionsFor('p0').length, 0);
   assert.equal(g.choose('p0', [5]).ok, false);
-  assert.equal(g.choose('p0', [1]).ok, true);              // 1번을 공개 → 0,2번이 내 패
-  assert.deepEqual(g.hand.chosen.p0, [g.hand.cards.p0[0], g.hand.cards.p0[2]]);
+  assert.equal(g.choose('p0', [1]).ok, true);              // 1번을 공개, 족보는 3장 중 최선 2장
+  assert.deepEqual(g.hand.chosen.p0, R.bestPair(g.hand.cards.p0).cards);
   assert.equal(g.hand.opened.p0, g.hand.cards.p0[1]);
   assert.equal(g.view('p1').players.find(p => p.id === 'p0').open, g.hand.cards.p0[1]);   // 남에게 공개됨
   assert.equal(g.view('p1').players.find(p => p.id === 'p0').cards, null);                 // 나머지는 비공개
   assert.equal(g.choose('p0', [0]).ok, false);             // 이미 골랐음
   assert.equal(g.view('p0').needChoose, false);
-  g.choose('p1', [1, 2]);                                   // 2장 지정 방식도 허용 → 0번 공개
+  g.choose('p1', [1, 2]);                                   // 2장 지정 방식도 허용 → 나머지(0번) 공개
   assert.equal(g.hand.opened.p1, g.hand.cards.p1[0]);
+  assert.deepEqual(g.hand.chosen.p1, R.bestPair(g.hand.cards.p1).cards);
   assert.equal(g.phase, 'choosing');
   g.autoChoose();                                          // p2 시간 초과 → 자동
   assert.equal(g.phase, 'betting');
   for (let i = 0; i < 3; i++) g.act(g.hand.turn, 'check');
   assert.equal(g.phase, 'result');
   const r = g.hand.result;
-  assert.deepEqual(r.used.p0, [g.hand.cards.p0[0], g.hand.cards.p0[2]]);
+  assert.deepEqual(r.used.p0, R.bestPair(g.hand.cards.p0).cards);   // 공개 카드도 조합에 포함
   assert.equal(R.evalHand(r.used.p0).name, r.hands.p0.name);
   assert.equal(total(g), 30000);
 });

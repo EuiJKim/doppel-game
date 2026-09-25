@@ -484,6 +484,10 @@
     const me = view.players.find(p => p.id === myId);
     const isHost = role === 'host';
     const res = view.result;
+    /* 쇼다운 무대가 끝나기 전엔 돈이 안 움직인 것처럼 보여준다 (누가 이겼는지 미리 새지 않게) */
+    const hideMoney = !!(res && !res.redeal && sd && sd.handNo === view.handNo && !sd.done);
+    const shownChips = p => hideMoney ? p.chips - (p.payout || 0) : p.chips;
+    const shownPot = hideMoney ? view.players.reduce((a, p) => a + (p.payout || 0), 0) : view.pot;
     $('top-code').textContent = code;
     $('top-hand').textContent = view.handNo ? `${view.handNo}판 · ${view.stageLabel}` : '';
     $('mode-tag').textContent = view.modeLabel;
@@ -492,8 +496,8 @@
       topSeg.classList.remove('hidden');
       topSeg.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); if (!b.onclick) b.onclick = () => { doSettings({ mode: b.dataset.mode }); if (view.phase === 'betting' || view.phase === 'choosing') toast(`다음 판부터 ${E.MODES[b.dataset.mode].label}`); }; });
     } else topSeg.classList.add('hidden');
-    { const pe = $('pot'); const prevPot = +pe.dataset.v || 0; tweenNum(pe, view.pot, 500); if (view.pot > prevPot && prevPot) { pe.classList.remove('tick'); void pe.offsetWidth; pe.classList.add('tick'); } }
-    { const pile = $('pot-pile'); const h = stackHtml(view.phase === 'result' && view.result && !view.result.redeal ? 0 : view.pot, false); if (pile.dataset.k !== h) { pile.innerHTML = h; pile.dataset.k = h; pile.classList.remove('bump'); void pile.offsetWidth; pile.classList.add('bump'); } }
+    { const pe = $('pot'); const prevPot = +pe.dataset.v || 0; tweenNum(pe, shownPot, 500); if (shownPot > prevPot && prevPot) { pe.classList.remove('tick'); void pe.offsetWidth; pe.classList.add('tick'); } }
+    { const pile = $('pot-pile'); const h = stackHtml(view.phase === 'result' && view.result && !view.result.redeal && !hideMoney ? 0 : shownPot, false); if (pile.dataset.k !== h) { pile.innerHTML = h; pile.dataset.k = h; pile.classList.remove('bump'); void pile.offsetWidth; pile.classList.add('bump'); } }
     { const ms = $('my-stack'); const meP = view.players.find(p => p.id === myId); const h = meP && meP.bet && view.phase !== 'result' ? stackHtml(meP.bet) : ''; if (ms.dataset.k !== h) { ms.innerHTML = h; ms.dataset.k = h; ms.classList.remove('bump'); void ms.offsetWidth; ms.classList.add('bump'); } }
 
     /* 상대 자리 */
@@ -507,7 +511,7 @@
       if (p.isTurn && turnChanged) cls.push('turn-in');
       if (p.folded) cls.push('folded');
       if (!p.connected) cls.push('off');
-      if (res && res.winners.includes(p.id)) cls.push('winner');
+      if (res && !hideMoney && res.winners.includes(p.id)) cls.push('winner');
       if (view.handNo && !p.inHand) cls.push('out');
       if (p.away) cls.push('away');
       let status = '', scls = '';
@@ -519,7 +523,7 @@
       else if (view.phase === 'choosing') { status = p.chosen ? '선택 완료' : '고르는 중…'; scls = p.chosen ? '' : 'hot'; }
       else if (p.allin) { status = '올인'; scls = 'hot'; }
       else if (p.isTurn) { status = '생각 중…'; scls = 'hot'; }
-      const net = res && p.inHand ? p.payout - p.contrib : 0;
+      const net = res && p.inHand && !hideMoney ? p.payout - p.contrib : 0;
       const usedIds = res && res.used ? res.used[p.id] : null;
       return `<div class="${cls.join(' ')}" data-id="${p.id}">
         ${p.isDealer ? '<div class="dealer">D</div>' : ''}
@@ -528,7 +532,7 @@
         ${bubbleHtml(p.id)}
         <img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt="">
         <div class="seat-name">${esc(p.name)}${p.bot ? '<span class="bot-tag">🤖</span>' : ''}</div>
-        <div class="seat-chips">💰 ${fmt(p.chips)}${p.rebuys ? `<span class="rebuy-tag">충전 ${p.rebuys}회</span>` : ''}</div>
+        <div class="seat-chips">💰 ${fmt(shownChips(p))}${p.rebuys ? `<span class="rebuy-tag">충전 ${p.rebuys}회</span>` : ''}</div>
         <div class="seat-cards">${p.inHand ? cardsHtml(p, '', usedIds, seatIdx) : ''}</div>
         <div class="seat-status ${scls}">${status}</div>
         ${p.folded && p.inHand && !res ? '<div class="stamp">DIE</div>' : ''}
@@ -554,7 +558,7 @@
       if (view.turn === myId) { cm.textContent = '내 차례'; cm.classList.add('me'); }
       else { const t = view.players.find(p => p.id === view.turn); cm.textContent = t ? `${t.name}의 차례` : ''; }
     } else if (view.phase === 'choosing') {
-      cm.textContent = view.needChoose ? (view.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '공개할 1장을 고르세요 (나머지 2장이 내 패)') : '다른 사람이 고르는 중…';
+      cm.textContent = view.needChoose ? (view.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '상대에게 공개할 1장을 고르세요 (족보는 3장 중 최선 2장)') : '다른 사람이 고르는 중…';
       if (view.needChoose) cm.classList.add('me');
     } else if (view.phase === 'result' && res) {
       cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : res.redeal ? `재경기 — 판돈 ${won(view.pot)} 이월` : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
@@ -571,7 +575,7 @@
     if (me) meBox.insertAdjacentHTML('afterbegin', bubbleHtml(me.id));
     Bgm.setTense(view.phase === 'betting' && view.turn === myId);
     renderMyCards(me);
-    tweenNum($('me-chips'), me ? me.chips : 0, 700);
+    tweenNum($('me-chips'), me ? shownChips(me) : 0, 700);
     $('me-bet').innerHTML = (me && me.bet ? `· 이번 라운드 ${won(me.bet)}` : (me && me.inHand && me.contrib ? `· 넣은 돈 ${won(me.contrib)}` : '')) + (me && me.rebuys ? ` <span class="rebuy-tag">충전 ${me.rebuys}회</span>` : '');
 
     /* 행동 버튼 */
@@ -597,7 +601,7 @@
         const need = view.mode === '3' ? 1 : 2;
         const ok = selected.length === need;
         ab.innerHTML = view.mode === '3'
-          ? `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 장을 공개<small>${ok ? '나머지 2장이 내 패' : '공개할 1장을 고르세요'}</small></button><button class="btn" id="btn-choose-best">최선으로 자동</button>`
+          ? `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 장을 공개<small>${ok ? '족보는 3장 중 최선 2장' : '공개할 1장을 고르세요'}</small></button><button class="btn" id="btn-choose-best">덜 중요한 장 자동 공개</button>`
           : `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 2장으로 확정${ok ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
         $('btn-choose').onclick = () => { if (selected.length === need) doChoose(selected.slice()); };
         $('btn-choose-best').onclick = () => { const pool = view.pool || me.cards; const b = R.bestPair(pool); doChoose(view.mode === '3' ? [pool.findIndex(c => !b.cards.includes(c))] : b.cards.map(c => pool.indexOf(c))); };
@@ -669,7 +673,7 @@
         const used = allRevealed && usedIds.includes(c) && (view.phase === 'result' || me.chosen);
         const dim = allRevealed && view.phase === 'result' && pool.length > 2 && usedIds.length && !usedIds.includes(c);
         const sel = canPick && selected.includes(i);
-        const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : '', sel ? 'sel' : '', canPick ? 'pick' : '', shared ? 'shared' : '', (view.mode === '3' && me.open != null && c === me.open) ? 'opened dim' : ''].join(' ');
+        const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : '', sel ? 'sel' : '', canPick ? 'pick' : '', shared ? 'shared' : '', (view.mode === '3' && me.open != null && c === me.open) ? 'opened' + (usedIds.includes(c) ? '' : ' dim') : ''].join(' ');
         const inner = isRev ? '' : `<div class="cover">${CARDS.BACK}</div><div class="hint">${PEEK_HINT[peekMode]}</div>`;
         const openedMine = view.mode === '3' && me.open != null && c === me.open;
         const badge = (sel ? `<div class="badge">${view.mode === '3' ? '공개' : selected.indexOf(i) + 1}</div>` : '') + (shared ? '<div class="tag">공유</div>' : '') + (openedMine ? '<div class="tag open">공개</div>' : '');
@@ -691,7 +695,7 @@
       let name = me.hand || '';
       if (me.best && me.best.length === 2) { const h = R.evalHand(me.best); if (h.special) { name = `${h.name} · ${h.special}`; mh.classList.add('special'); } }
       if (view.phase === 'choosing' && !me.chosen && selected.length === 2) { const h = R.evalHand([pool[selected[0]], pool[selected[1]]]); name = `선택: ${h.name}${h.special ? ' · ' + h.special : ''}`; }
-      if (view.phase === 'choosing' && !me.chosen && view.mode === '3' && selected.length === 1) { const rest = pool.filter((c, i) => i !== selected[0]); const h = R.evalHand(rest); name = `내 패: ${h.name}${h.special ? ' · ' + h.special : ''} (${R.describeOne(pool[selected[0]])} 공개)`; }
+      if (view.phase === 'choosing' && !me.chosen && view.mode === '3' && selected.length === 1) { const b = R.bestPair(pool); const inBest = b.cards.includes(pool[selected[0]]); name = `내 족보: ${b.hand.name}${b.hand.special ? ' · ' + b.hand.special : ''} (${R.describeOne(pool[selected[0]])} 공개${inBest ? ' — 족보 카드예요!' : ''})`; }
       mh.textContent = name;
     }
     /* 쪼기 방식 선택 */
