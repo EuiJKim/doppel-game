@@ -581,4 +581,35 @@ t('무승부 → 판돈 묻고 비긴 사람끼리만 다음 판', () => {
   assert.equal(total(g), 30000);
 });
 
+console.log('관전');
+t('관전자(중간 입장·자리 비움)는 모든 패·족보가 보이고, 참가자는 자기 패만 보인다', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.setAway('p2', true);
+  g.startHand();
+  assert.deepEqual(g.hand.participants.sort(), ['p0', 'p1']);
+  g.addPlayer('p3', 'late');                          // 판 도중 입장
+  for (const spec of ['p2', 'p3']) {
+    const v = g.view(spec);
+    assert.equal(v.spectating, true);
+    for (const id of ['p0', 'p1']) {
+      const p = v.players.find(x => x.id === id);
+      assert(Array.isArray(p.cards) && p.cards.length === 1, spec + ' sees ' + id);
+      assert(p.hand, 'hand name shown');
+    }
+  }
+  const v0 = g.view('p0');
+  assert.equal(v0.spectating, false);
+  assert(Array.isArray(v0.players.find(x => x.id === 'p0').cards));
+  assert.equal(v0.players.find(x => x.id === 'p1').cards, null);
+  const v1 = g.view('p1');
+  assert.equal(v1.players.find(x => x.id === 'p0').cards, null);
+});
+t('관전자는 홀덤 가운데 숨김 카드도 보인다', () => {
+  const g = mk(['a', 'b', 'c'], { mode: 'holdem' });
+  g.setAway('p2', true);
+  g.startHand();
+  assert.equal(g.view('p0').board[0], null);
+  assert.notEqual(g.view('p2').board[0], null);
+});
+
 console.log(`\n${n} tests passed`);
