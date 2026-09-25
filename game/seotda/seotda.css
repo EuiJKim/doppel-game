@@ -199,6 +199,18 @@ input:focus { border-color: var(--accent); }
 @keyframes stampIn { from { transform: translate(-50%, -50%) rotate(-18deg) scale(3); opacity: 0; } to { transform: translate(-50%, -50%) rotate(-18deg) scale(1); opacity: 0.9; } }
 
 .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 4px 12px 8px; min-height: 0; }
+.deck { position: relative; width: 40px; height: 60px; margin-bottom: 8px; }
+.deck .dk { position: absolute; inset: 0; border-radius: 5px; background: #a51d1d url(cards/back.png) center / cover; box-shadow: 0 1px 3px rgba(0,0,0,0.6); border: 1px solid #3a0a0a; }
+.deck .dk:nth-child(1) { transform: translate(0, 0); }
+.deck .dk:nth-child(2) { transform: translate(-1.5px, -1.5px); }
+.deck .dk:nth-child(3) { transform: translate(-3px, -3px); }
+.deck .dk:nth-child(4) { transform: translate(-4.5px, -4.5px); }
+.deck.shuffling .dk:nth-child(1), .deck.shuffling .dk:nth-child(3) { animation: shufL .3s ease-in-out 3; }
+.deck.shuffling .dk:nth-child(2), .deck.shuffling .dk:nth-child(4) { animation: shufR .3s ease-in-out 3; }
+@keyframes shufL { 0%, 100% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(-26px, -6px) rotate(-14deg); } }
+@keyframes shufR { 0%, 100% { transform: translate(-3px, -3px) rotate(0); } 50% { transform: translate(24px, 4px) rotate(12deg); } }
+.deck.empty { opacity: 0.35; }
+.pick-title { grid-column: 1 / -1; text-align: center; font-size: 13px; font-weight: 800; color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 .pot-box { display: flex; align-items: baseline; gap: 6px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(232, 194, 86, 0.35); border-radius: 20px; padding: 4px 14px; }
 .pot-label { color: var(--muted); font-size: 12px; }
 .pot { font-size: 20px; color: var(--accent); }

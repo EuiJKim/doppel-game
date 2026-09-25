@@ -46,6 +46,17 @@
   /* ── 소리 (합성) ── */
   const Snd = (() => {
     let ctx = null;
+    function noise(dur, peak, delay, freq) {
+      if (muted) return;
+      try {
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume();
+        const n = Math.floor(ctx.sampleRate * dur), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+        const s = ctx.createBufferSource(); s.buffer = b; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq || 2500; f.Q.value = 0.8;
+        const g = ctx.createGain(); g.gain.value = peak || 0.08; s.connect(f).connect(g).connect(ctx.destination); s.start(ctx.currentTime + (delay || 0));
+      } catch (e) { }
+    }
     function tone(freq, dur, type, peak, slide, delay) {
       if (muted) return;
       try {
@@ -60,6 +71,8 @@
     }
     return {
       deal: () => tone(300, 0.08, 'triangle', 0.06, 520),
+      shuffle: () => { for (let i = 0; i < 9; i++) noise(0.09, 0.12, i * 0.11, 1800 + (i % 3) * 600); },
+      slide: () => noise(0.12, 0.07, 0, 3200),
       turn: () => { tone(660, 0.12, 'sine', 0.12); tone(880, 0.16, 'sine', 0.12, null, 0.12); },
       chip: () => { tone(1500, 0.05, 'square', 0.04); tone(1900, 0.04, 'square', 0.03, null, 0.05); },
       peek: () => tone(180, 0.06, 'triangle', 0.05, 240),
@@ -181,6 +194,7 @@
     if (role === 'host') hostChat(myName, text); else client.send({ t: 'chat', text });
   }
   function doStart() { if (role !== 'host') return; inSettings = false; if (!game.startHand()) toast('돈이 있는 사람이 2명 이상 있어야 시작할 수 있어요'); }
+  function doPick(mode) { if (role === 'host') game.pickMode(myId, mode); else client.send({ t: 'pick', mode }); }
   function doAway(v) { if (role === 'host') game.setAway(myId, v); else client.send({ t: 'away', away: !!v }); }
   function doExtend() { if (role === 'host') game.extendTurn(myId); else client.send({ t: 'extend' }); }
   function doSettings(patch) { if (role !== 'host') return; if (!game.updateSettings(patch)) toast('판이 끝난 뒤에 바꿀 수 있어요'); }
@@ -212,6 +226,7 @@
         else if (msg.t === 'choose') game.choose(pid, Array.isArray(msg.idxs) ? msg.idxs.map(Number) : []);
         else if (msg.t === 'rebuy') game.rebuy(pid);
         else if (msg.t === 'away') game.setAway(pid, !!msg.away);
+        else if (msg.t === 'pick') game.pickMode(pid, String(msg.mode));
         else if (msg.t === 'extend') game.extendTurn(pid);
         else if (msg.t === 'chat') hostChat(p.name, String(msg.text || '').slice(0, 60));
       },
@@ -345,10 +360,11 @@
     const fill = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
     fill('set-raises', s.maxRaises); fill('set-turn', s.turnSec); fill('set-max', s.maxPlayers);
     if (document.activeElement !== $('set-special')) $('set-special').checked = !!s.special;
+    if (document.activeElement !== $('set-loser')) $('set-loser').checked = s.loserPicks !== false;
     if (!settingsBound) {
       settingsBound = true;
-      const push = () => doSettings({ maxRaises: +$('set-raises').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, special: $('set-special').checked });
-      ['set-raises', 'set-turn', 'set-max', 'set-special'].forEach(id => $(id).addEventListener('change', push));
+      const push = () => doSettings({ maxRaises: +$('set-raises').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, special: $('set-special').checked, loserPicks: $('set-loser').checked });
+      ['set-raises', 'set-turn', 'set-max', 'set-special', 'set-loser'].forEach(id => $(id).addEventListener('change', push));
       $('set-mode').querySelectorAll('button').forEach(b => b.onclick = () => doSettings({ mode: b.dataset.mode }));
     }
     const n = view.players.filter(p => p.connected).length;
@@ -366,7 +382,7 @@
     $('top-hand').textContent = view.handNo ? `${view.handNo}판 · ${view.stageLabel}` : '';
     $('mode-tag').textContent = view.modeLabel;
     const topSeg = $('top-mode');
-    if (isHost) {
+    if (isHost && !(view.picker && view.picker !== myId)) {
       topSeg.classList.remove('hidden');
       topSeg.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); if (!b.onclick) b.onclick = () => { doSettings({ mode: b.dataset.mode }); if (view.phase === 'betting' || view.phase === 'choosing') toast(`다음 판부터 ${E.MODES[b.dataset.mode].label}`); }; });
     } else topSeg.classList.add('hidden');
@@ -464,7 +480,8 @@
       if (armedTurnAt !== view.turnAt) {
         armedTurnAt = view.turnAt; const at = view.turnAt;
         ab.querySelectorAll('button').forEach((b, i) => { b.classList.add('arming'); b.style.transitionDelay = (i * 60) + 'ms'; });
-        setTimeout(() => { if (view && view.turnAt === at) ab.querySelectorAll('button').forEach(b => b.classList.remove('arming')); }, 520);
+        const arm = () => { if (!view || view.turnAt !== at) return; const left = dealEndsAt - Date.now(); if (left > 0) { setTimeout(arm, left); return; } ab.querySelectorAll('button').forEach(b => b.classList.remove('arming')); };
+        setTimeout(arm, 520);
       }
     } else if (view.phase === 'choosing') {
       if (view.needChoose) {
@@ -481,15 +498,19 @@
     } else {
       let s = '';
       if (me && me.canRebuy) s += `<button class="btn raise" id="btn-rebuy">다시 참가<small>10,000원</small></button>`;
+      const iPick = view.picker && view.picker === myId;
+      if (iPick) s += `<div class="pick-title">😵 이번 판 진 사람 — 다음 게임을 고르세요</div><div class="seg mini" id="pick-seg"><button data-mode="2">2장 섯다</button><button data-mode="3">3장 섯다</button><button data-mode="holdem">홀덤 섯다</button></div>`;
+      else if (view.picker) s += `<div class="pick-title">${esc(view.pickerName)}(진 사람)이 다음 게임을 고르는 중 · 현재 ${view.nextModeLabel}</div>`;
       if (isHost) {
         s += `<button class="btn call" id="btn-next">다음 판<small>${view.nextModeLabel}</small></button><button class="btn" id="btn-settings">설정</button>`;
-        s += `<div class="seg mini" id="mode-seg"><button data-mode="2">2장</button><button data-mode="3">3장</button><button data-mode="holdem">홀덤</button></div>`;
-      } else s += `<div class="wait">방장이 다음 판(${view.nextModeLabel})을 시작하면 이어져요</div>`;
+        if (!view.picker) s += `<div class="seg mini" id="mode-seg"><button data-mode="2">2장</button><button data-mode="3">3장</button><button data-mode="holdem">홀덤</button></div>`;
+      } else if (!iPick) s += `<div class="wait">방장이 다음 판(${view.nextModeLabel})을 시작하면 이어져요</div>`;
       ab.innerHTML = s;
       if ($('btn-next')) $('btn-next').onclick = doStart;
       if ($('btn-settings')) $('btn-settings').onclick = () => { inSettings = true; render(); };
       if ($('btn-rebuy')) $('btn-rebuy').onclick = doRebuy;
       if ($('mode-seg')) $('mode-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); b.onclick = () => doSettings({ mode: b.dataset.mode }); });
+      if ($('pick-seg')) $('pick-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); b.onclick = () => { doPick(b.dataset.mode); Snd.pop(); }; });
     }
 
     renderQuick(me);
@@ -641,27 +662,48 @@
     el.animate([{ transform: 'translate(-50%,-50%) scale(1)' }, { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.8)`, opacity: 0.9 }], { duration: 520, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => el.remove();
   }
   /* 덱(판돈 자리)에서 각 자리로 카드가 날아간다 */
+  let shuffledHand = 0, dealEndsAt = 0;
   function animateDeals() {
     const targets = [...document.querySelectorAll('#screen-table .card.deal:not([data-flown])')];
     if (!targets.length) return;
-    const fx = $('fx'); const fr = fx.getBoundingClientRect(); const src = $('pot-box').getBoundingClientRect();
+    const fx = $('fx'); const fr = fx.getBoundingClientRect(); const src = $('deck').getBoundingClientRect();
     const sx = src.left + src.width / 2 - fr.left, sy = src.top + src.height / 2 - fr.top;
-    targets.forEach((el, i) => {
+    /* 순서: 딜러 다음 사람부터 자리 순으로, 한 장씩 돌아가며(라운드 로빈). 공유 카드는 맨 뒤 */
+    const inHand = view.players.filter(p => p.inHand).sort((a, b) => a.seat - b.seat);
+    const dSeat = (view.players.find(p => p.isDealer) || {}).seat ?? -1;
+    const order = inHand.filter(p => p.seat > dSeat).concat(inHand.filter(p => p.seat <= dSeat)).map(p => p.id);
+    const items = targets.map(el => {
+      const seat = el.closest('.seat'); const pid = seat ? seat.dataset.id : (el.closest('#me-cards') ? myId : null);
+      const idx = [...el.parentElement.children].filter(c => c.classList.contains('card')).indexOf(el);
+      return { el, pid, idx, rank: pid ? order.indexOf(pid) : 99 };
+    }).sort((a, b) => (a.pid ? 0 : 1) - (b.pid ? 0 : 1) || a.idx - b.idx || a.rank - b.rank);
+    /* 판의 첫 딜이면 먼저 덱을 섞는다 */
+    let base = 0;
+    if (shuffledHand !== view.handNo) {
+      shuffledHand = view.handNo; base = 1000;
+      const deck = $('deck'); deck.classList.remove('shuffling'); void deck.offsetWidth; deck.classList.add('shuffling'); Snd.shuffle();
+      setTimeout(() => deck.classList.remove('shuffling'), 950);
+    }
+    const per = 190;
+    dealEndsAt = Date.now() + base + items.length * per + 400;
+    items.forEach((it, i) => {
+      const el = it.el;
       el.dataset.flown = '1'; el.classList.remove('deal'); el.style.visibility = 'hidden';
       const r = el.getBoundingClientRect(); if (!r.width) { el.style.visibility = ''; return; }
       const fly = document.createElement('div'); fly.className = 'card-fly'; fly.innerHTML = CARDS.BACK;
       fly.style.left = sx + 'px'; fly.style.top = sy + 'px'; fly.style.width = r.width + 'px'; fly.style.height = r.height + 'px';
       fx.appendChild(fly);
       const dx = r.left + r.width / 2 - fr.left - sx, dy = r.top + r.height / 2 - fr.top - sy;
+      const delay = base + i * per;
       const anim = fly.animate([
-        { transform: 'translate(-50%,-50%) rotate(-20deg) scale(.7)', opacity: 0.9 },
-        { transform: `translate(calc(-50% + ${dx * 0.6}px), calc(-50% + ${dy * 0.6 - 30}px)) rotate(8deg) scale(1.05)`, opacity: 1, offset: 0.6 },
+        { transform: 'translate(-50%,-50%) rotate(-6deg) scale(.92)', opacity: 0.95 },
+        { transform: `translate(calc(-50% + ${dx * 0.55}px), calc(-50% + ${dy * 0.55 - 18}px)) rotate(6deg) scale(1.03)`, opacity: 1, offset: 0.55 },
         { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(0) scale(1)`, opacity: 1 },
-      ], { duration: 460, delay: i * 110, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'both' });
-      setTimeout(() => Snd.whoosh(), i * 110);
+      ], { duration: 380, delay, easing: 'cubic-bezier(.25,.8,.3,1)', fill: 'both' });
+      setTimeout(() => Snd.slide(), delay);
       const land = () => { fly.remove(); if (el.style.visibility === 'hidden') { el.style.visibility = ''; el.classList.add('landed'); } };
       anim.onfinish = land;
-      setTimeout(land, 460 + i * 110 + 250);   // 애니메이션 이벤트가 안 와도(백그라운드 탭 등) 카드는 반드시 보이게
+      setTimeout(land, delay + 380 + 250);   // 애니메이션 이벤트가 안 와도(백그라운드 탭 등) 카드는 반드시 보이게
     });
   }
   function actPop(pid, type, text) {
@@ -745,6 +787,7 @@
       else if (v.mode === '3' && v.street === 2) banner('세 번째 장', 'small');
     }
     if (v.phase === 'choosing' && prev.phase !== 'choosing') banner(v.needChoose ? '2장을 고르세요' : '패 선택 중', 'small');
+    if (v.picked && !prev.picked && v.settings.mode !== prev.settings.mode) { const who = v.players.find(p => p.id === v.picked); banner(`다음 판은 ${v.nextModeLabel}`, 'gold small', who ? `${who.name}의 선택` : ''); Snd.pop(); }
     /* 내 차례 */
     if (v.phase === 'betting' && v.turn === myId && (prev.turn !== myId || prev.phase !== 'betting')) Snd.turn();
     if (v.phase === 'choosing' && prev.phase !== 'choosing' && v.needChoose) Snd.turn();
@@ -865,6 +908,8 @@
     }).join('');
     $('result-body').innerHTML = rows + (res.redeal ? `<div class="result-note">판돈 ${won(view.pot)}이 다음 판으로 이월됩니다</div>` : '');
     let acts = '';
+    if (view.picker && view.picker === myId) acts += `<div class="pick-title">😵 진 사람은 다음 게임을 고를 수 있어요 — 결과창을 닫고 골라주세요</div>`;
+    else if (view.picker) acts += `<div class="result-note">${esc(view.pickerName)}(진 사람)이 다음 게임을 고릅니다</div>`;
     if (role === 'host') acts += `<button class="btn primary" id="res-next">다음 판 (${view.nextModeLabel})</button>`;
     else acts += `<div class="result-note">방장이 다음 판(${view.nextModeLabel})을 시작하면 이어져요</div>`;
     if (me && me.canRebuy) acts += `<button class="btn" id="res-rebuy">10,000원으로 다시 참가</button>`;
