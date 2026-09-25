@@ -469,7 +469,7 @@
     if (!settingsBound) {
       settingsBound = true;
       const push = () => doSettings({ maxRaises: +$('set-raises').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, special: $('set-special').checked, loserPicks: $('set-loser').checked, startChips: +$('set-chips').value });
-      ['set-raises', 'set-turn', 'set-max', 'set-special', 'set-loser', 'set-chips'].forEach(id => $(id).addEventListener('change', push));
+      ['set-raises', 'set-turn', 'set-max', 'set-special', 'set-loser', 'set-chips'].forEach(id => { $(id).addEventListener('change', push); $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(id).blur(); push(); } }); });
       $('set-mode').querySelectorAll('button').forEach(b => b.onclick = () => doSettings({ mode: b.dataset.mode }));
     }
     const n = view.players.filter(p => p.connected).length;
