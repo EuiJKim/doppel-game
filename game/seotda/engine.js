@@ -42,7 +42,7 @@
       const h = this.hand;
       return {
         v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, picker: this.picker,
-        players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats })),
+        players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats, bot: !!p.bot })),
         refund: h && this.inProgress() ? { ...h.contrib, __carry: h.carry } : null,
         carry: h && this.phase === 'result' && h.result && h.result.redeal ? h.pot : 0,
         history: this.history.slice(-30), log: this.log.slice(-40),
@@ -50,7 +50,7 @@
     }
     static restore(snap, newHostId, rng) {
       const g = new Game(snap.settings, rng);
-      g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId }));
+      g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId || !!p.bot }));   // 봇은 새 방장이 계속 돌린다
       g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.picker = snap.picker || null;
       g.history = snap.history || []; g.log = snap.log || [];
       g.phase = 'lobby';
@@ -92,7 +92,7 @@
     }
 
     /* ── 플레이어 ── */
-    addPlayer(id, name, avatar) {
+    addPlayer(id, name, avatar, bot) {
       const existing = this.player(id);
       if (existing) { existing.connected = true; existing.name = name || existing.name; if (avatar) existing.avatar = avatar; this._log(`${existing.name} 재접속`); this._touch(); return existing; }
       /* 탭을 닫았다 다시 온 사람: 같은 닉네임의 끊긴 자리를 이어받는다 (현재 판에 살아있지 않을 때만) */
@@ -102,9 +102,9 @@
       if (connected >= this.settings.maxPlayers) return null;
       const used = new Set(this.players.map(p => p.seat));
       let seat = 0; while (used.has(seat)) seat++;
-      const p = { id, name: (name || '익명').slice(0, 10), avatar: String(avatar || '').slice(0, 12), chips: this.settings.startChips, seat, connected: true, rebuys: 0, away: false, stats: newStats() };
+      const p = { id, name: (name || '익명').slice(0, 10), avatar: String(avatar || '').slice(0, 12), chips: this.settings.startChips, seat, connected: true, rebuys: 0, away: false, stats: newStats(), bot: !!bot };
       this.players.push(p);
-      this._log(`${p.name} 입장${this.handNo ? ' (다음 판부터 참가)' : ''}`);
+      this._log(`${p.name} ${bot ? '(봇) ' : ''}입장${this.handNo ? ' (다음 판부터 참가)' : ''}`);
       this._touch();
       return p;
     }
@@ -492,7 +492,7 @@
           else handName = R.describeOne(cards[0]);
         }
         return {
-          id: p.id, name: p.name, avatar: p.avatar || '', chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys,
+          id: p.id, name: p.name, avatar: p.avatar || '', chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, bot: !!p.bot,
           inHand, folded: inHand && h.folded.has(p.id), allin: inHand && h.allin.has(p.id),
           bet: inHand ? h.bets[p.id] || 0 : 0, contrib: inHand ? h.contrib[p.id] : 0,
           cards: show ? cards : null, cardCount: cards.length, hand: handName, best,
