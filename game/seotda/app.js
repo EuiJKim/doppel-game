@@ -87,6 +87,8 @@
       good: () => { [659, 784, 988].forEach((f, i) => tone(f, 0.18, 'triangle', 0.1, null, i * 0.07)); tone(1318, 0.5, 'triangle', 0.1, null, 0.24); },
       great: () => { [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, 0.35, 'square', 0.05, null, i * 0.09)); [262, 330].forEach((f, i) => tone(f, 1.2, 'sawtooth', 0.04, null, 0.3 + i * 0.05)); },
       tick: () => tone(1800, 0.05, 'square', 0.05),
+      riser: () => { tone(120, 1.6, 'sawtooth', 0.05, 900); tone(240, 1.6, 'triangle', 0.04, 1800); },
+      snap: () => { noise(0.05, 0.14, 0, 3500); tone(900, 0.06, 'square', 0.05, 300); },
       drum: () => { let d = 0; for (let i = 0; i < 14; i++) { tone(85, 0.07, 'square', 0.07, 50, d); d += 0.13 - i * 0.006; } },
       whoosh: () => tone(900, 0.12, 'triangle', 0.04, 200),
       coin: (i) => tone(1500 + (i % 4) * 180, 0.12, 'sine', 0.05, 2600),
@@ -410,7 +412,7 @@
   function receiveView(v) {
     const prev = view; view = v;
     if (v.turnLeft != null) { localDeadline = Date.now() + v.turnLeft; deadlineTotal = v.settings.turnSec * 1000; } else localDeadline = 0;
-    if (v.handNo !== revealedHand) { revealed = new Set(); revealedHand = v.handNo; selected = []; lastCardKey = {}; meCardsKey = ''; $('me-cards').innerHTML = ''; $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); $('winfx').classList.add('hidden'); $('reaction').classList.add('hidden'); renderedTurn = null; if (sd) { sd.timers.forEach(clearTimeout); sd = null; } if (prev) banner(`${v.handNo}판`, 'small', v.modeLabel); }
+    if (v.handNo !== revealedHand) { revealed = new Set(); revealedHand = v.handNo; selected = []; lastCardKey = {}; meCardsKey = ''; $('me-cards').innerHTML = ''; $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); $('winfx').classList.add('hidden'); $('reaction').classList.add('hidden'); renderedTurn = null; if (sd) { sd.timers.forEach(clearTimeout); sd = null; $('sdstage').classList.add('hidden'); $('screen-table').querySelector('.felt').classList.remove('dim'); } if (prev) banner(`${v.handNo}판`, 'small', v.modeLabel); }
     const me = v.players.find(p => p.id === myId);
     if (prev && prev.handNo === v.handNo) effects(prev, v, me);
     else if (prev && v.handNo !== prev.handNo) { Snd.deal(); }
@@ -912,26 +914,70 @@
     const players = v.players.filter(p => r.revealed.includes(p.id));
     const order = players.filter(p => !r.winners.includes(p.id)).concat(players.filter(p => r.winners.includes(p.id)));
     const at = (ms, fn) => sd.timers.push(setTimeout(() => { if (sd && !sd.done && view && view.handNo === sd.handNo) fn(); }, ms));
-    let t = 700;
+    const felt = $('screen-table').querySelector('.felt');
+    const stage = $('sdstage');
+    let leader = null;   // { name, score }
+    let t = 600;
+    at(t, () => felt.classList.add('dim'));
     order.forEach((p, pi) => {
-      const n = p.cardCount, last = pi === order.length - 1, mine = p.id === myId;
-      at(t, () => { sd.cur = p.name; renderTable(); });
-      for (let i = 0; i < n; i++) {
-        if (last && i === n - 1 && !mine) { at(t, () => Snd.drum()); t += 1100; }
-        t += (i === 0 ? 350 : 700);
-        if (!mine) at(t, () => { sd.open[p.id] = i + 1; Snd.reveal(); renderTable(); });
-      }
-      t += mine ? 200 : 450;
-      at(t, () => { sd.hand[p.id] = true; const h = r.hands[p.id]; renderTable(); actPop(p.id, 'hand', h ? h.name : ''); (h && (h.tier === '땡' || h.tier === '광땡')) ? Snd.good() : Snd.pop(); });
-      t += last ? 300 : 500;
+      const last = pi === order.length - 1, isWin = r.winners.includes(p.id);
+      const hand = r.hands[p.id]; const used = (r.used && r.used[p.id]) || p.cards || [];
+      const big = hand && (hand.tier === '광땡' || hand.tier === '땡');
+      /* 무대 등장 */
+      t += 250;
+      at(t, () => {
+        sd.cur = p.name; renderTable();
+        stage.className = 'sdstage' + (last ? ' winner' : '');
+        $('ss-avatar').src = avatarSrc(p.avatar); $('ss-avatar').className = avatarCls(p.avatar);
+        $('ss-name').textContent = p.name; $('ss-sub').textContent = last ? '마지막 패…' : `${pi + 1}번째 공개`;
+        $('ss-cards').innerHTML = used.map(c => `<div class="ss-card ${last ? 'slow' : ''}"><div class="face">${CARDS.face(R.cardById(c))}</div><div class="cover">${CARDS.BACK}</div></div>`).join('');
+        const hh = $('ss-hand'); hh.className = 'ss-hand'; hh.textContent = '';
+        const ld = $('ss-lead'); ld.className = 'ss-lead'; ld.innerHTML = leader ? `현재 1등: <b>${esc(leader.name)}</b> ${esc(leader.hand)}` : '';
+        stage.classList.remove('hidden'); Snd.whoosh();
+      });
+      /* 카드 한 장씩 쪼듯이 */
+      used.forEach((c, i) => {
+        const finalCard = last && i === used.length - 1;
+        if (finalCard) {   // 승자 마지막 장: 심장박동 + 상승음
+          t += 350;
+          at(t, () => { stage.classList.add('thump'); $('ss-sub').textContent = '두구두구…'; Snd.riser(); Snd.drum(); });
+          t += 1700;
+        } else t += 350;
+        const peelMs = finalCard ? 1500 : 950;
+        at(t, () => { const el = $('ss-cards').children[i]; if (!el) return; el.style.setProperty('--peel', peelMs + 'ms'); el.querySelector('.cover').classList.add('peel'); Snd.peek(); stage.classList.remove('thump'); });
+        t += peelMs;
+        at(t, () => { const el = $('ss-cards').children[i]; if (!el) return; const cv = el.querySelector('.cover'); if (cv) cv.remove(); el.classList.add('hit'); Snd.snap(); });
+        t += 200;
+      });
+      /* 족보 도장 + 역전 */
+      t += 250;
+      at(t, () => {
+        const hh = $('ss-hand'); hh.textContent = hand ? hand.name + (hand.special && r.catcher === hand.special ? '!' : '') : ''; hh.className = 'ss-hand show' + (big ? ' great' : hand && hand.score <= 703 ? ' bad' : '');
+        big ? Snd.good() : Snd.pop();
+        if (big) felt.classList.add('shake');
+        const ld = $('ss-lead');
+        if (isWin) { ld.className = 'ss-lead flip'; ld.textContent = r.catcher && r.winners.includes(p.id) ? `${r.catcher}! 잡았다!` : leader ? '역전!! 1등' : '1등'; Snd.win(); }
+        else if (!leader || (hand && hand.score > leader.score)) { ld.className = 'ss-lead' + (leader ? ' flip' : ''); ld.textContent = leader ? '역전! 현재 1등' : '현재 1등'; if (leader) Snd.pop(); leader = { name: p.name, score: hand ? hand.score : 0, hand: hand ? hand.name : '' }; }
+        else { ld.className = 'ss-lead'; ld.innerHTML = `1등은 여전히 <b>${esc(leader.name)}</b> ${esc(leader.hand)}`; }
+        setTimeout(() => felt.classList.remove('shake'), 600);
+        /* 자리에도 반영 */
+        sd.open[p.id] = 9; sd.hand[p.id] = true; renderTable(); actPop(p.id, 'hand', hand ? hand.name : '');
+      });
+      t += last ? 1500 : 1100;
+      at(t, () => { stage.classList.add('out'); });
+      t += 300;
+      at(t, () => { stage.classList.add('hidden'); stage.classList.remove('out'); });
     });
-    at(t + 200, () => finishShowdown(r, v, me));
+    t += 100;
+    at(t, () => finishShowdown(r, v, me));
     sd.skip = () => finishShowdown(r, v, me);
   }
   function finishShowdown(r, v, me) {
     if (!sd || sd.done) return;
     sd.timers.forEach(clearTimeout); sd.done = true;
     for (const id of r.revealed) { sd.open[id] = 9; sd.hand[id] = true; }
+    $('sdstage').classList.add('hidden'); $('sdstage').classList.remove('thump', 'out');
+    $('screen-table').querySelector('.felt').classList.remove('dim', 'shake');
     renderTable();
     announce(r, v, me);
   }
