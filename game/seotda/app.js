@@ -12,9 +12,11 @@
     dog: { name: '블랙 강아지', img: 'avatars/dog.jpg', q: { bet: ['멍!', '컹컹!', '으르렁…', '왈!'], die: ['깨갱…', '낑…'], win: ['멍멍멍!!', '왈왈!'], call: ['멍.', '컹.'], allin: ['왈왈왈왈!!!', '으르르릉!!'] } },
     sunji: { name: '홍어먹는 순지형', img: 'avatars/sunji.jpg', q: { bet: ['홍어 한 점 하고 간다', '삭힌 만큼 간다', '이건 먹어야지'], die: ['아 삭았다…', '다음 판에 보자'], win: ['홍어값 나왔다', '크~ 알싸하다'], call: ['콜.', '한 점만 더'], allin: ['홍어 한 마리 통째로!', '삭힐 만큼 삭혔다, 간다!'] } },
     kang: { name: '일베하는 강현이', img: 'avatars/kang.jpg', q: { bet: ['가즈아~', 'ㅋㅋㅋ 받고 더', '이건 못 참지'], die: ['아 몰랑', '에바다 에바'], win: ['ㅋㅋㅋㅋ 개이득', '인정?'], call: ['ㅇㅇ 콜', '따라감'], allin: ['풀매수 가즈아!!', '인생은 한방 ㅋㅋ'] } },
+    woo: { name: '헛둘우영', img: 'avatars/woo.webp', still: 'avatars/woo.jpg', anim: true, q: { bet: ['헛둘헛둘!', '헛둘! 받고 더', '헛둘… 간다!'], die: ['헛… 둘…', '헛둘 다음 판에', '헛둘 삐끗'], win: ['헛둘헛둘 이겼다!', '헛둘! 접수', '헛둘헛둘 헛둘헛둘~'], call: ['헛둘 콜', '둘… 콜'], allin: ['헛둘헛둘헛둘 올인!!', '헛둘! 다 걸어!'] } },
   };
   let myChar = localStorage.getItem(LS.char) || 'dog'; if (!CHARS[myChar]) myChar = 'dog';
   const avatarSrc = key => (CHARS[key] || CHARS.dog).img;
+  const avatarCls = key => 'avatar' + ((CHARS[key] || CHARS.dog).anim ? ' anim' : '');
   const bubbles = {};   // pid → { text, until }
   function say(pid, kind) {
     const p = view && view.players.find(x => x.id === pid); if (!p) return;
@@ -348,7 +350,7 @@
     const isHost = role === 'host';
     $('lobby-code').textContent = code;
     $('lobby-players').innerHTML = view.players.map(p => `
-      <div class="lp"><span class="dot ${p.connected ? '' : 'off'}"></span><img class="avatar" src="${avatarSrc(p.avatar)}" alt=""><span>${esc(p.name)}</span>
+      <div class="lp"><span class="dot ${p.connected ? '' : 'off'}"></span><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span>${esc(p.name)}</span>
         ${p.seat === 0 ? '<span class="tag">방장</span>' : ''}${p.id === myId ? '<span class="tag">나</span>' : ''}
         <span class="sp"></span><span class="muted">💰 ${won(p.chips)}</span>
         ${isHost && p.id !== myId ? `<button class="icon-btn kick" data-id="${p.id}" title="내보내기">✕</button>` : ''}</div>`).join('');
@@ -417,7 +419,7 @@
         ${p.isDealer ? '<div class="dealer">D</div>' : ''}
         ${res && p.inHand && net ? `<div class="seat-bet payout-badge ${net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</div>` : p.bet ? `<div class="seat-bet">${fmt(p.bet)}</div>` : ''}
         ${bubbleHtml(p.id)}
-        <img class="avatar" src="${avatarSrc(p.avatar)}" alt="">
+        <img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt="">
         <div class="seat-name">${esc(p.name)}</div>
         <div class="seat-chips">💰 ${fmt(p.chips)}</div>
         <div class="seat-cards">${p.inHand ? cardsHtml(p, '', usedIds, seatIdx) : ''}</div>
@@ -457,7 +459,7 @@
     meBox.classList.toggle('folded', !!(me && me.folded));
     meBox.classList.toggle('myturn', view.phase === 'betting' && view.turn === myId);
     if (view.phase === 'betting' && view.turn === myId && turnChanged) { meBox.classList.remove('turn-in'); void meBox.offsetWidth; meBox.classList.add('turn-in'); }
-    $('me-name').innerHTML = `<img class="avatar" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${me && me.isDealer ? ' <span class="muted">딜러</span>' : ''}${!me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
+    $('me-name').innerHTML = `<img class="${avatarCls(me ? me.avatar : myChar)}" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${me && me.isDealer ? ' <span class="muted">딜러</span>' : ''}${!me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
     const oldB = meBox.querySelector('.bubble'); if (oldB) oldB.remove();
     if (me) meBox.insertAdjacentHTML('afterbegin', bubbleHtml(me.id));
     Bgm.setTense(view.phase === 'betting' && view.turn === myId);
@@ -880,7 +882,7 @@
   function openStats() {
     const rows = view.players.slice().sort((a, b) => (b.stats?.net || 0) - (a.stats?.net || 0));
     $('stats-body').innerHTML = `<div class="st-row head"><span></span><span>이름</span><span class="r">판</span><span class="r">승</span><span class="r">순손익</span><span class="r">최고</span></div>` +
-      rows.map(p => { const s = p.stats || {}; const net = s.net || 0; return `<div class="st-row"><img class="avatar" src="${avatarSrc(p.avatar)}" alt=""><span class="nm">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}${s.maxStreak >= 2 ? ` <span class="muted">🔥${s.maxStreak}</span>` : ''}</span><span class="r">${s.hands || 0}</span><span class="r">${s.wins || 0}</span><span class="${net >= 0 ? 'pos' : 'neg'}">${net > 0 ? '+' : ''}${fmt(net)}</span><span class="best">${s.best ? esc(s.best.name) : '-'}</span></div>`; }).join('');
+      rows.map(p => { const s = p.stats || {}; const net = s.net || 0; return `<div class="st-row"><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span class="nm">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}${s.maxStreak >= 2 ? ` <span class="muted">🔥${s.maxStreak}</span>` : ''}</span><span class="r">${s.hands || 0}</span><span class="r">${s.wins || 0}</span><span class="${net >= 0 ? 'pos' : 'neg'}">${net > 0 ? '+' : ''}${fmt(net)}</span><span class="best">${s.best ? esc(s.best.name) : '-'}</span></div>`; }).join('');
     const hist = (view.history || []).slice().reverse();
     $('stats-hist').innerHTML = hist.length ? hist.map(h => `<div class="hist-row"><span>${h.no}판</span><b>${esc(h.winners.join(', '))}</b><span class="hh">${esc(h.catcher ? h.catcher + '!' : h.hand)}</span><span>판돈 ${fmt(h.pot)}</span></div>`).join('') : '<div class="hist-row">아직 없음</div>';
     $('stats').classList.remove('hidden');
