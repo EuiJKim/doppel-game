@@ -87,10 +87,10 @@
       good: () => { [659, 784, 988].forEach((f, i) => tone(f, 0.18, 'triangle', 0.1, null, i * 0.07)); tone(1318, 0.5, 'triangle', 0.1, null, 0.24); },
       great: () => { [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, 0.35, 'square', 0.05, null, i * 0.09)); [262, 330].forEach((f, i) => tone(f, 1.2, 'sawtooth', 0.04, null, 0.3 + i * 0.05)); },
       tick: () => tone(1800, 0.05, 'square', 0.05),
-      riser: () => { tone(120, 1.6, 'sawtooth', 0.05, 900); tone(240, 1.6, 'triangle', 0.04, 1800); },
+      riser: () => { tone(120, 1.1, 'sawtooth', 0.05, 900); tone(240, 1.1, 'triangle', 0.04, 1800); },
       chat: () => { tone(1200, 0.07, 'sine', 0.08); tone(1600, 0.09, 'sine', 0.08, null, 0.08); },
       snap: () => { noise(0.05, 0.14, 0, 3500); tone(900, 0.06, 'square', 0.05, 300); },
-      drum: () => { let d = 0; for (let i = 0; i < 14; i++) { tone(85, 0.07, 'square', 0.07, 50, d); d += 0.13 - i * 0.006; } },
+      drum: () => { let d = 0; for (let i = 0; i < 11; i++) { tone(85, 0.07, 'square', 0.07, 50, d); d += 0.12 - i * 0.006; } },
       whoosh: () => tone(900, 0.12, 'triangle', 0.04, 200),
       coin: (i) => tone(1500 + (i % 4) * 180, 0.12, 'sine', 0.05, 2600),
       pop: () => tone(500, 0.08, 'square', 0.05, 900),
@@ -934,14 +934,14 @@
     const felt = $('screen-table').querySelector('.felt');
     const stage = $('sdstage');
     let leader = null;   // { name, score }
-    let t = 600;
+    let t = 450;
     at(t, () => felt.classList.add('dim'));
     order.forEach((p, pi) => {
       const last = pi === order.length - 1, isWin = r.winners.includes(p.id);
       const hand = r.hands[p.id]; const used = (r.used && r.used[p.id]) || p.cards || [];
       const big = hand && (hand.tier === '광땡' || hand.tier === '땡');
       /* 무대 등장 */
-      t += 250;
+      t += 200;
       at(t, () => {
         sd.cur = p.name; renderTable();
         stage.className = 'sdstage' + (last ? ' winner' : '');
@@ -956,18 +956,18 @@
       used.forEach((c, i) => {
         const finalCard = last && i === used.length - 1;
         if (finalCard) {   // 승자 마지막 장: 심장박동 + 상승음
-          t += 350;
+          t += 250;
           at(t, () => { stage.classList.add('thump'); $('ss-sub').textContent = '두구두구…'; Snd.riser(); Snd.drum(); });
-          t += 1700;
-        } else t += 350;
-        const peelMs = finalCard ? 1500 : 950;
+          t += 1100;
+        } else t += 250;
+        const peelMs = finalCard ? 1000 : 650;
         at(t, () => { const el = $('ss-cards').children[i]; if (!el) return; el.style.setProperty('--peel', peelMs + 'ms'); el.querySelector('.cover').classList.add('peel'); Snd.peek(); stage.classList.remove('thump'); });
         t += peelMs;
         at(t, () => { const el = $('ss-cards').children[i]; if (!el) return; const cv = el.querySelector('.cover'); if (cv) cv.remove(); el.classList.add('hit'); Snd.snap(); });
-        t += 200;
+        t += 150;
       });
       /* 족보 도장 + 역전 */
-      t += 250;
+      t += 150;
       at(t, () => {
         const hh = $('ss-hand'); hh.textContent = hand ? hand.name + (hand.special && r.catcher === hand.special ? '!' : '') : ''; hh.className = 'ss-hand show' + (big ? ' great' : hand && hand.score <= 703 ? ' bad' : '');
         big ? Snd.good() : Snd.pop();
@@ -980,9 +980,9 @@
         /* 자리에도 반영 */
         sd.open[p.id] = 9; sd.hand[p.id] = true; renderTable(); actPop(p.id, 'hand', hand ? hand.name : '');
       });
-      t += last ? 1500 : 1100;
+      t += last ? 1100 : 750;
       at(t, () => { stage.classList.add('out'); });
-      t += 300;
+      t += 250;
       at(t, () => { stage.classList.add('hidden'); stage.classList.remove('out'); });
     });
     t += 100;
@@ -1023,7 +1023,7 @@
         const pot = $('pot-box');
         for (const id of r.winners) setTimeout(() => flyChip(pot, seatEl(id), r.payouts[id] || 0, true), 300);
         if (meWon) setTimeout(() => celebrate(myNet, bigHand, top ? top.name : ''), 500);
-        showResultPanel(r.byFold ? 1500 : (meWon ? 3600 : 2200));
+        showResultPanel(r.byFold ? 1500 : (meWon ? 2800 : 1600));
       }
     }
   }
