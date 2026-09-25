@@ -499,10 +499,11 @@
     view(forId) {
       const h = this.hand; const s = this.settings;
       const isResult = this.phase === 'result';
+      const spectator = !!(h && !h.participants.includes(forId));   // 이번 판에 안 낀 사람(대기·자리 비움·중간 입장)은 관전자 → 모든 패가 보인다
       const players = this.seated().map(p => {
         const inHand = !!(h && h.participants.includes(p.id));
         const cards = h ? (h.cards[p.id] || []) : [];
-        const show = inHand && (p.id === forId || (isResult && h.result.revealed.includes(p.id)));
+        const show = inHand && (p.id === forId || spectator || (isResult && h.result.revealed.includes(p.id)));
         let handName = null, best = null;
         if (show && cards.length) {
           const pool = this.pool(p.id);
@@ -528,7 +529,8 @@
         v: this.version, phase: this.phase, settings: s, handNo: this.handNo, me: forId,
         mode: h ? h.mode : s.mode, modeLabel: MODES[h ? h.mode : s.mode].label, nextMode: s.mode, nextModeLabel: MODES[s.mode].label,
         pot: h ? h.pot : 0, street: h ? h.street : 0, stageLabel: h ? h.stageLabel : '', curBet: h ? h.curBet : 0, raises: h ? h.raises : 0,
-        board: h ? h.board.map((c, i) => (i < h.boardHidden ? null : c)) : [], boardMax: MODES[h ? h.mode : s.mode].board,
+        board: h ? h.board.map((c, i) => (i < h.boardHidden && !spectator ? null : c)) : [], boardMax: MODES[h ? h.mode : s.mode].board,
+        spectating: spectator,
         pool: me && me.cards ? this.pool(forId) : null,
         turn: h ? h.turn : null, turnAt: h ? h.turnAt : 0, chooseAt: h ? h.chooseAt : 0,
         needChoose: !!(this.phase === 'choosing' && me && me.inHand && !me.folded && !me.chosen),

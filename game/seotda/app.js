@@ -177,7 +177,7 @@
     return `<div class="card ${size || ''} ${extra || ''}" data-cid="${id}" title="${c.m}월 ${c.name} ${c.k === '열' ? '열끗' : c.k}"><div class="face">${CARDS.face(c)}</div></div>`;
   }
   function backHtml(size, extra) { return `<div class="card back ${size || ''} ${extra || ''}">${CARDS.BACK}</div>`; }
-  const sdGate = p => !!(sd && view && sd.handNo === view.handNo && !sd.done && p.id !== myId);
+  const sdGate = p => !!(sd && view && sd.handNo === view.handNo && !sd.done && p.id !== myId && !view.spectating);   // 관전자는 이미 다 보고 있으니 순차 공개로 가리지 않는다
   function cardsHtml(p, size, usedIds, delayIdx) {
     const gate = sdGate(p);
     const faces = p.cards ? (gate ? Math.min(p.cards.length, sd.open[p.id] || 0) : p.cards.length) : 0;
@@ -523,6 +523,7 @@
       else if (view.phase === 'choosing') { status = p.chosen ? '선택 완료' : '고르는 중…'; scls = p.chosen ? '' : 'hot'; }
       else if (p.allin) { status = '올인'; scls = 'hot'; }
       else if (p.isTurn) { status = '생각 중…'; scls = 'hot'; }
+      if (view.spectating && p.inHand && p.hand && !res && !p.folded) { status = `<b class="spec-hand">${esc(p.hand)}</b>${status ? ' · ' + status : ''}`; }   // 관전자에게는 족보도 보여준다
       const net = res && p.inHand && !hideMoney ? p.payout - p.contrib : 0;
       const usedIds = res && res.used ? res.used[p.id] : null;
       return `<div class="${cls.join(' ')}" data-id="${p.id}">
@@ -570,7 +571,7 @@
     meBox.classList.toggle('folded', !!(me && me.folded));
     meBox.classList.toggle('myturn', view.phase === 'betting' && view.turn === myId);
     if (view.phase === 'betting' && view.turn === myId && turnChanged) { meBox.classList.remove('turn-in'); void meBox.offsetWidth; meBox.classList.add('turn-in'); }
-    $('me-name').innerHTML = `<img class="${avatarCls(me ? me.avatar : myChar)}" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${me && me.isDealer ? ' <span class="muted">딜러</span>' : ''}${!me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
+    $('me-name').innerHTML = `<img class="${avatarCls(me ? me.avatar : myChar)}" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${me && me.isDealer ? ' <span class="muted">딜러</span>' : ''}${view.spectating ? ' <span class="muted">(관전 중)</span>' : !me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
     const oldB = meBox.querySelector('.bubble'); if (oldB) oldB.remove();
     if (me) meBox.insertAdjacentHTML('afterbegin', bubbleHtml(me.id));
     Bgm.setTense(view.phase === 'betting' && view.turn === myId);
@@ -605,10 +606,10 @@
           : `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 2장으로 확정${ok ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
         $('btn-choose').onclick = () => { if (selected.length === need) doChoose(selected.slice()); };
         $('btn-choose-best').onclick = () => { const pool = view.pool || me.cards; const b = R.bestPair(pool); doChoose(view.mode === '3' ? [pool.findIndex(c => !b.cards.includes(c))] : b.cards.map(c => pool.indexOf(c))); };
-      } else ab.innerHTML = `<div class="wait">${me && me.chosen ? '선택 완료 — 다른 사람을 기다리는 중' : me && me.folded ? '다이 — 이번 판은 구경' : '다른 사람이 고르는 중'}</div>`;
+      } else ab.innerHTML = `<div class="wait">${me && me.chosen ? '선택 완료 — 다른 사람을 기다리는 중' : me && me.folded ? '다이 — 이번 판은 구경' : view.spectating ? '👀 관전 중 — 모든 패가 보여요' : '다른 사람이 고르는 중'}</div>`;
     } else if (view.phase === 'betting') {
       const t = view.players.find(p => p.id === view.turn);
-      ab.innerHTML = `<div class="wait">${me && me.folded ? '다이 — 이번 판은 구경' : me && !me.inHand ? '다음 판부터 참가해요' : t ? `${esc(t.name)} 차례를 기다리는 중` : '…'}</div>`;
+      ab.innerHTML = `<div class="wait">${me && me.folded ? '다이 — 이번 판은 구경' : view.spectating ? '👀 관전 중 — 모든 패가 보여요 · 다음 판부터 참가' : me && !me.inHand ? '다음 판부터 참가해요' : t ? `${esc(t.name)} 차례를 기다리는 중` : '…'}</div>`;
     } else if (sd && sd.handNo === view.handNo && !sd.done) {
       ab.innerHTML = `<div class="wait">쇼다운 중… ${sd.cur ? esc(sd.cur) + ' 공개' : ''}</div><button class="btn" id="btn-skip-sd">건너뛰기 ▶</button>`;
       $('btn-skip-sd').onclick = () => { if (sd && sd.skip) sd.skip(); };
