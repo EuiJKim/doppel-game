@@ -90,6 +90,7 @@
       <label>턴 시간(초, 0=무제한) <input type="number" id="set-turn" min="0" max="180"></label>
       <label>최대 인원 <input type="number" id="set-max" min="2" max="8"></label>
       <label class="check"><input type="checkbox" id="set-special"> 특수족보 (땡잡이·암행어사·구사)</label>
+      <label class="check"><input type="checkbox" id="set-loser"> 진 사람이 다음 게임을 고른다</label>
     </div>
 
     <button class="btn primary" id="btn-start" disabled>게임 시작</button>
@@ -121,6 +122,7 @@
   <div class="felt">
     <div class="seats" id="seats"></div>
     <div class="center">
+      <div class="deck" id="deck"><div class="dk"></div><div class="dk"></div><div class="dk"></div><div class="dk"></div></div>
       <div class="pot-box" id="pot-box"><span class="pot-label">판돈</span><b class="pot" id="pot">0</b><span class="won">원</span></div>
       <div class="board" id="board"></div>
       <div class="center-msg" id="center-msg"></div>

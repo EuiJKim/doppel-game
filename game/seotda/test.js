@@ -508,4 +508,25 @@ t('스냅샷 → 복원: 카드 없음, 진행 중 판은 환급, 새 방장만 
   assert.equal(g2.hand.participants.length, 2);
 });
 
+t('진 사람이 다음 게임을 고른다 (가장 많이 잃은 사람), 본인만·판 사이에만', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand();
+  g.act('p1', 'half'); g.act('p2', 'die'); g.act('p0', 'call');
+  g.act('p1', 'check'); g.act('p0', 'check');
+  assert.equal(g.phase, 'result');
+  const r = g.hand.result; const loser = g.hand.order.find(id => !r.winners.includes(id) && (r.payouts[id] || 0) - g.hand.contrib[id] < -100);
+  assert.equal(g.picker, loser);
+  const v = g.view(loser);
+  assert.equal(v.picker, loser); assert(v.pickerName);
+  const other = ['p0', 'p1', 'p2'].find(id => id !== loser);
+  assert.equal(g.pickMode(other, '3'), false);          // 남은 못 고른다
+  assert.equal(g.pickMode(loser, 'holdem'), true);
+  assert.equal(g.settings.mode, 'holdem'); assert.equal(g.picker, null);
+  g.startHand(); assert.equal(g.hand.mode, 'holdem');
+  assert.equal(g.pickMode(loser, '2'), false);          // 판 중엔 불가
+  const g2 = mk(['a', 'b'], { loserPicks: false });
+  g2.startHand(); while (g2.phase === 'betting') g2.act(g2.hand.turn, 'check');
+  assert.equal(g2.view('p0').picker, null);
+});
+
 console.log(`\n${n} tests passed`);

@@ -10,7 +10,7 @@
 
   const ANTE = 100, START_CHIPS = 10000;
   const newStats = () => ({ hands: 0, wins: 0, net: 0, won: 0, best: null, streak: 0, maxStreak: 0 });
-  const DEFAULTS = { mode: '2', ante: ANTE, startChips: START_CHIPS, special: true, maxRaises: 3, turnSec: 30, maxPlayers: 6 };
+  const DEFAULTS = { mode: '2', ante: ANTE, startChips: START_CHIPS, special: true, maxRaises: 3, turnSec: 30, maxPlayers: 6, loserPicks: true };
   const ACTION_LABEL = { check: '체크', call: '콜', ping: '삥', ddadang: '따당', quarter: '쿼터', half: '하프', allin: '올인', die: '다이' };
   /* 스테이지: deal:n(개인 카드 n장) · board:n(공유 카드 n장) · bet · choose(3장 중 2장) · show */
   const MODES = {
@@ -29,6 +29,7 @@
       this.hand = null;
       this.handNo = 0;
       this.log = [];
+      this.picker = null; this.picked = null;
       this.history = [];
       this.lastDealerSeat = null;
       this.version = 0;
@@ -40,7 +41,7 @@
     snapshot(hostId) {
       const h = this.hand;
       return {
-        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat,
+        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, picker: this.picker,
         players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats })),
         refund: h && this.inProgress() ? { ...h.contrib, __carry: h.carry } : null,
         carry: h && this.phase === 'result' && h.result && h.result.redeal ? h.pot : 0,
@@ -50,7 +51,7 @@
     static restore(snap, newHostId, rng) {
       const g = new Game(snap.settings, rng);
       g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId }));
-      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null;
+      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.picker = snap.picker || null;
       g.history = snap.history || []; g.log = snap.log || [];
       g.phase = 'lobby';
       const oldHost = g.players.find(p => p.id === snap.hostId);
@@ -82,6 +83,7 @@
       s.maxRaises = Math.min(10, Math.max(0, Math.floor(s.maxRaises) || 0));
       s.turnSec = Math.min(180, Math.max(0, Math.floor(s.turnSec) || 0));
       s.maxPlayers = Math.min(8, Math.max(2, Math.floor(s.maxPlayers) || 6));
+      s.loserPicks = s.loserPicks !== false;
       const modeChanged = s.mode !== this.settings.mode;
       this.settings = s;
       this._log(modeChanged ? `다음 판부터 ${MODES[s.mode].label}` : `설정 변경: 특수족보 ${s.special ? 'ON' : 'OFF'} · 레이즈 ${s.maxRaises}회 · 타이머 ${s.turnSec || '없음'}`);
@@ -166,6 +168,13 @@
       else return false;
       h.extended.add(id); this._log(`${this.player(id).name}: +15초`); this._touch(); return true;
     }
+    /* 진 사람의 다음 게임 선택 */
+    pickMode(id, mode) {
+      if (!this.settings.loserPicks || this.picker !== id || this.inProgress() || !MODES[mode]) return false;
+      if (this.settings.mode !== mode) { this.settings.mode = mode; this._log(`${this.player(id).name}(진 사람)이 다음 판을 ${MODES[mode].label}로 골랐어요`); }
+      this.picker = null; this.picked = id;
+      this._touch(); return true;
+    }
     canExtend(id) { const h = this.hand; return !!(h && this.settings.turnSec && !h.extended.has(id) && ((this.phase === 'betting' && h.turn === id) || (this.phase === 'choosing' && this._inLiveHand(id) && !h.chosen[id]))); }
     canStart() { return !this.inProgress() && this.eligible().length >= 2; }
 
@@ -184,6 +193,7 @@
       const mode = this.mode();
 
       this.handNo++;
+      this.picker = null; this.picked = null;
       const order = this.seated().filter(p => participants.includes(p.id)).map(p => p.id);
       let dealer;
       if (redeal && prev && order.includes(prev.dealer)) dealer = prev.dealer;
@@ -417,6 +427,12 @@
         }
       }
       h.result = result;
+      /* 진 사람(가장 많이 잃은 사람)이 다음 게임을 고른다. 동점이면 딜러 다음 순서가 먼저 */
+      if (!result.redeal) {
+        let worst = null, worstNet = 0;
+        for (const id of h.order) { const net = (payouts[id] || 0) - h.contrib[id]; if (net < worstNet) { worstNet = net; worst = id; } }
+        this.picker = worst;
+      }
       /* 전적·기록 */
       for (const id of h.participants) {
         const p = this.player(id); if (!p) continue;
@@ -498,6 +514,7 @@
         players, actions: this.actionsFor(forId),
         lastAction: h && h.actions.length ? { ...h.actions[h.actions.length - 1], n: h.actions.length } : null,
         canExtend: this.canExtend(forId), history: this.history.slice(-12),
+        picker: s.loserPicks ? this.picker : null, pickerName: s.loserPicks && this.picker && this.player(this.picker) ? this.player(this.picker).name : null, picked: this.picked,
         canStart: this.canStart(),
         result: isResult ? h.result : null,
         log: this.log.slice(-30),
