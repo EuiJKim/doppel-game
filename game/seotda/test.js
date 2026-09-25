@@ -311,11 +311,18 @@ t('랜덤 플레이 500판: 칩 총량 보존, 예외 없음', () => {
 
 
 console.log('모드');
-t('판돈 100 · 시작금 10000 고정 (설정으로 못 바꿈)', () => {
+t('판돈 100 고정, 시작금은 설정 가능(1,000~10,000,000, 100 단위)', () => {
   const g = mk(['a', 'b'], { ante: 500, startChips: 50 });
-  assert.equal(g.settings.ante, 100); assert.equal(g.settings.startChips, 10000);
-  g.updateSettings({ ante: 1, startChips: 5 });
-  assert.equal(g.settings.ante, 100); assert.equal(g.settings.startChips, 10000);
+  assert.equal(g.settings.ante, 100); assert.equal(g.settings.startChips, 1000);
+  g.updateSettings({ ante: 1, startChips: 50000 });
+  assert.equal(g.settings.ante, 100); assert.equal(g.settings.startChips, 50000);
+  g.players.forEach(p => assert.equal(p.chips, 50000));            // 시작 전이라 모두 반영
+  g.startHand(); while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  const before = g.player('p0').chips;
+  g.updateSettings({ startChips: 20000 });
+  assert.equal(g.player('p0').chips, before);                       // 게임 중엔 기존 돈 유지
+  g.player('p1').chips = 0; assert(g.rebuy('p1')); assert.equal(g.player('p1').chips, 20000);   // 재참가는 새 시작금
+  const q = g.addPlayer('p9', 'c'); assert.equal(q.chips, 20000);
 });
 t('3장 섯다: 2장 → 베팅 → 3장째 → 선택 → 베팅 → 쇼다운', () => {
   const g = mk(['a', 'b', 'c'], { mode: '3' });
@@ -397,7 +404,7 @@ t('게임 중 모드 변경 → 다음 판부터 적용 (진행 중인 판은 �
   assert.equal(g.hand.mode, '3');
   assert.equal(g.hand.cards.p0.length, 2);
 });
-t('돈 0이면 판 밖에서 언제든 10000원 재참가, 판 안(올인)에서는 불가', () => {
+t('돈 0이면 판 밖에서 언제든 시작금으로 재참가, 판 안(올인)에서는 불가', () => {
   const g = mk(['a', 'b', 'c']);
   g.player('p2').chips = 0;                                 // 판에 못 들어감
   g.startHand();
