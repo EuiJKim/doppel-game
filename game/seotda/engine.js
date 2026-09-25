@@ -282,7 +282,7 @@
           if (live.length <= 1) continue;
           this.phase = 'choosing'; h.turn = null; h.chosen = {}; h.chooseAt = Date.now();
           h.stageLabel = '2장 선택';
-          this._log(h.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 공개할 1장을 고르세요 (나머지 2장이 패)');
+          this._log(h.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 공개할 1장을 고르세요 (족보는 3장 중 최선 2장)');
           return;
         }
         if (kind === 'show') { h.turn = null; this._finish(this._live(), false); return; }
@@ -347,16 +347,16 @@
       if (h.chosen[id]) return { ok: false, error: '이미 골랐어요' };
       const cards = this.pool(id);
       if (!Array.isArray(idxs)) return { ok: false, error: '카드를 골라주세요' };
-      if (h.mode === '3' && idxs.length === 1) {
-        /* 3장 섯다: 공개할 1장을 고르면 나머지 2장이 내 패. 공개 카드는 모두에게 보인다 */
-        const oi = idxs[0]; if (!(oi >= 0 && oi < cards.length)) return { ok: false, error: '공개할 1장을 골라주세요' };
-        h.opened[id] = cards[oi]; h.chosen[id] = cards.filter((c, i) => i !== oi);
+      if (h.mode === '3') {
+        /* 3장 섯다: 공개할 1장을 고른다(모두에게 보임). 족보는 공개 카드 포함 3장 중 최선의 2장 */
+        const oi = idxs.length === 1 ? idxs[0] : (idxs.length === 2 ? cards.findIndex((c, i) => i !== idxs[0] && i !== idxs[1]) : -1);
+        if (!(oi >= 0 && oi < cards.length)) return { ok: false, error: '공개할 1장을 골라주세요' };
+        h.opened[id] = cards[oi]; h.chosen[id] = R.bestPair(cards).cards;
         this._log(`${this.player(id).name}: ${R.describeOne(cards[oi])} 공개`);
       } else {
         if (idxs.length !== 2 || idxs[0] === idxs[1] || idxs.some(i => !(i >= 0 && i < cards.length))) return { ok: false, error: '2장을 골라주세요' };
         h.chosen[id] = [cards[idxs[0]], cards[idxs[1]]];
-        if (h.mode === '3') { h.opened[id] = cards.find(c => !h.chosen[id].includes(c)); this._log(`${this.player(id).name}: ${R.describeOne(h.opened[id])} 공개`); }
-        else this._log(`${this.player(id).name}: 2장 선택 완료`);
+        this._log(`${this.player(id).name}: 2장 선택 완료`);
       }
       this._checkChooseDone();
       this._touch();
