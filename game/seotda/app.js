@@ -213,8 +213,10 @@
   }
   function hostBroadcast() {
     const snap = game.snapshot(myId);   // 카드는 없다. 방장이 끊기면 이걸로 다음 사람이 방을 이어받는다
-    for (const p of game.players) if (p.id !== myId && p.connected) host.send(p.id, { t: 'state', view: withTimer(game.view(p.id)), snap });
+    for (const p of game.players) if (p.id !== myId && p.connected && !p.bot) host.send(p.id, { t: 'state', view: withTimer(game.view(p.id)), snap });
+    const prevV = view;
     receiveView(withTimer(game.view(myId)));
+    botTaunts(prevV, view);
     scheduleHostTimer();
   }
   function hostHandlers(onFatal) {
@@ -238,7 +240,78 @@
       },
     };
   }
+  /* ── 봇(컴퓨터 플레이어): 방장 브라우저에서 돈다 ── */
+  const BOT_TAUNT = { win: ['ㅋㅋ 접수', '다음 판도 내 거', '이 정도야 뭐', '고마워요~'], lose: ['아 몰라', '다음 판에 보자', '…운이 없네'], big: ['이건 못 참지 ㅋㅋ', '올려볼까?'] };
+  let botTimer = null;
+  function addBot() {
+    if (role !== 'host') return;
+    const used = new Set(game.players.map(p => p.avatar));
+    const keys = Object.keys(CHARS); const free = keys.filter(k => !used.has(k));
+    const k = (free.length ? free : keys)[Math.floor(Math.random() * (free.length ? free.length : keys.length))];
+    const base = CHARS[k].name.split(' ').pop().replace(/이$/, '') + '봇';
+    let name = base, i = 2; while (game.players.some(p => p.name === name)) name = base + (i++);
+    const p = game.addPlayer('bot_' + N.makeCode(6).toLowerCase(), name, k, true);
+    if (!p) toast('자리가 꽉 찼어요'); else { p.brain = { aggr: 0.3 + Math.random() * 0.45, bluff: 0.08 + Math.random() * 0.15 }; }
+  }
+  function botStrength(id) {
+    const h = game.hand; const pool = game.pool(id); const s = game.settings;
+    if (pool.length >= 2) {
+      const hd = R.bestPair(pool).hand;
+      let v = hd.tier === '광땡' ? 1 : hd.tier === '땡' ? 0.72 + (hd.score - 900) * 0.025 : hd.tier === '특수' ? 0.58 + (hd.score - 810) * 0.002 : 0.2 + (hd.score - 700) * 0.045;
+      if (hd.special === '땡잡이' || hd.special === '암행어사') v = Math.max(v, 0.62);
+      if (h.mode === 'holdem' && h.boardHidden) v = v * 0.75 + 0.1;   // 공유 카드 아직 안 열림
+      return Math.min(1, v);
+    }
+    const c = R.cardById(pool[0]);
+    return c.k === '광' ? 0.55 : c.m === 10 ? 0.5 : c.m === 1 || c.m === 4 ? 0.47 : 0.4;
+  }
+  function botDecide(id) {
+    const opts = game.actionsFor(id); if (!opts.length) return null;
+    const p = game.player(id); const br = p.brain || (p.brain = { aggr: 0.5, bluff: 0.12 });
+    const has = t => opts.find(o => o.type === t);
+    const call = has('call'); const callAmt = call ? call.amount : 0;
+    const pot = game.hand.pot;
+    let s = botStrength(id) + (Math.random() - 0.5) * 0.16 + (br.aggr - 0.5) * 0.12;
+    const bluffing = Math.random() < br.bluff;
+    const raise = s > 0.9 && has('allin') && br.aggr > 0.6 && Math.random() < 0.5 ? 'allin' : s > 0.8 && has('half') ? 'half' : s > 0.66 && (has('quarter') || has('ddadang') || has('ping')) ? (has('quarter') ? 'quarter' : has('ddadang') ? 'ddadang' : 'ping') : null;
+    if (callAmt === 0) return raise || (bluffing && (has('ping') || has('quarter')) ? (has('ping') ? 'ping' : 'quarter') : 'check');
+    const odds = callAmt / (pot + callAmt);
+    if (callAmt >= p.chips * 0.6 && s < 0.7 && !bluffing) return 'die';
+    if (s < Math.max(0.3, odds * 1.5) && !bluffing) return 'die';
+    return raise || 'call';
+  }
+  function scheduleBots() {
+    clearTimeout(botTimer);
+    if (role !== 'host' || !game) return;
+    const h = game.hand;
+    const think = 900 + Math.random() * 1400;
+    if (game.phase === 'betting' && h && h.turn) {
+      const p = game.player(h.turn);
+      if (p && p.bot) { const turn = h.turn, at = h.turnAt; botTimer = setTimeout(() => { if (game.phase === 'betting' && game.hand === h && h.turn === turn && h.turnAt === at) { const a = botDecide(turn); if (a) game.act(turn, a); } }, Math.max(think, dealEndsAt - Date.now() + 400)); }
+      return;
+    }
+    if (game.phase === 'choosing' && h) {
+      const pend = game.players.filter(p => p.bot && h.participants.includes(p.id) && !h.folded.has(p.id) && !h.chosen[p.id]);
+      if (pend.length) { botTimer = setTimeout(() => { if (game.phase !== 'choosing' || game.hand !== h) return; const p = pend[0]; const pool = game.pool(p.id); const b = R.bestPair(pool); game.choose(p.id, b.cards.map(c => pool.indexOf(c))); }, think); }
+      return;
+    }
+    if (!game.inProgress()) {
+      const broke = game.players.find(p => p.bot && game.canRebuy(p.id));
+      if (broke) { botTimer = setTimeout(() => { if (game.canRebuy(broke.id)) game.rebuy(broke.id); }, 1200); return; }
+      if (game.picker && game.player(game.picker) && game.player(game.picker).bot) { const id = game.picker; botTimer = setTimeout(() => { if (game.picker === id) game.pickMode(id, ['2', '3', 'holdem'][Math.floor(Math.random() * 3)]); }, 1800); }
+    }
+  }
+  function botTaunts(prev, v) {
+    if (role !== 'host' || !v.result || (prev && prev.phase === 'result')) return;
+    const r = v.result; if (r.redeal) return;
+    for (const p of game.players) {
+      if (!p.bot || !v.players.find(x => x.id === p.id && x.inHand)) continue;
+      const won = r.winners.includes(p.id); const lines = won ? BOT_TAUNT.win : BOT_TAUNT.lose;
+      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, 2500 + Math.random() * 2500);
+    }
+  }
   function scheduleHostTimer() {
+    scheduleBots();
     clearTimeout(hostTimer);
     const h = game.hand; const s = game.settings;
     if (!h || !s.turnSec) return;
@@ -352,7 +425,7 @@
     $('lobby-players').innerHTML = view.players.map(p => `
       <div class="lp"><span class="dot ${p.connected ? '' : 'off'}"></span><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span>${esc(p.name)}</span>
         ${p.seat === 0 ? '<span class="tag">방장</span>' : ''}${p.id === myId ? '<span class="tag">나</span>' : ''}
-        <span class="sp"></span><span class="muted">💰 ${won(p.chips)}</span>
+        ${p.bot ? '<span class="bot-tag">🤖 봇</span>' : ''}<span class="sp"></span><span class="muted">💰 ${won(p.chips)}</span>
         ${isHost && p.id !== myId ? `<button class="icon-btn kick" data-id="${p.id}" title="내보내기">✕</button>` : ''}</div>`).join('');
     if (isHost) $('lobby-players').querySelectorAll('.kick').forEach(b => b.onclick = () => { host.kick(b.dataset.id); game.removePlayer(b.dataset.id); });
     const s = view.settings;
@@ -372,7 +445,8 @@
     const n = view.players.filter(p => p.connected).length;
     $('btn-start').disabled = !(isHost && view.canStart);
     $('btn-start').textContent = view.handNo ? `다음 판 시작 (${view.nextModeLabel})` : `게임 시작 (${view.nextModeLabel})`;
-    $('lobby-hint').textContent = isHost ? (view.canStart ? `${n}명 준비됨` : '2명 이상 모이면 시작할 수 있어요') : `방장이 시작하길 기다리는 중 (${n}명)`;
+    $('lobby-hint').textContent = isHost ? (view.canStart ? `${n}명 준비됨` : '2명 이상 모이면 시작할 수 있어요 (봇을 넣어도 돼요)') : `방장이 시작하길 기다리는 중 (${n}명)`;
+    $('btn-addbot').classList.toggle('hidden', !isHost);
   }
 
   /* ── 테이블 ── */
@@ -420,7 +494,7 @@
         ${res && p.inHand && net ? `<div class="seat-bet payout-badge ${net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</div>` : p.bet ? `<div class="seat-bet">${fmt(p.bet)}</div>` : ''}
         ${bubbleHtml(p.id)}
         <img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt="">
-        <div class="seat-name">${esc(p.name)}</div>
+        <div class="seat-name">${esc(p.name)}${p.bot ? '<span class="bot-tag">🤖</span>' : ''}</div>
         <div class="seat-chips">💰 ${fmt(p.chips)}</div>
         <div class="seat-cards">${p.inHand ? cardsHtml(p, '', usedIds, seatIdx) : ''}</div>
         <div class="seat-status ${scls}">${status}</div>
@@ -870,12 +944,15 @@
     if (view.canExtend) s += `<button class="ext" data-q="extend">⏱ +15초</button>`;
     s += `<button class="util ${away ? 'away-on' : ''}" data-q="away">${away ? '↩ 돌아오기' : '🚻 자리 비움'}</button>`;
     s += `<button class="util" data-q="stats">📊 전적</button>`;
+    if (role === 'host') { s += `<button class="util" data-q="addbot">🤖 봇 추가</button>`; if (view.players.some(p => p.bot)) s += `<button class="util" data-q="rmbot">🤖 봇 빼기</button>`; }
     s += QUICK.map(t => `<button data-q="chat" data-t="${esc(t)}">${esc(t)}</button>`).join('');
     if (q.dataset.k !== s) { q.innerHTML = s; q.dataset.k = s; q.querySelectorAll('button').forEach(b => b.onclick = () => {
       const k = b.dataset.q;
       if (k === 'extend') doExtend();
       else if (k === 'away') doAway(!(view && view.players.find(p => p.id === myId)?.away));
       else if (k === 'stats') openStats();
+      else if (k === 'addbot') addBot();
+      else if (k === 'rmbot') { const b = game.players.filter(p => p.bot).pop(); if (b) { if (game.inProgress() && game.hand.participants.includes(b.id)) game.setAway(b.id, true); else game.removePlayer(b.id); toast(`${b.name} ${game.player(b.id) ? '다음 판부터 빠져요' : '내보냈어요'}`); } }
       else if (k === 'chat') doChat(b.dataset.t);
     }); }
   }
@@ -954,7 +1031,7 @@
 
   /* ── 나가기 / 홈 ── */
   function goHome(err) {
-    clearTimeout(hostTimer); Bgm.stop();
+    clearTimeout(hostTimer); clearTimeout(botTimer); Bgm.stop();
     if (host) { const h = host; try { h.broadcast({ t: 'bye' }); } catch (e) { } setTimeout(() => h.close(), 200); }
     if (client) client.close();
     host = null; client = null; game = null; view = null; role = null; inSettings = false; chatLines = []; lastCardKey = {}; resultHand = 0; meCardsKey = ''; revealed = new Set(); revealedHand = 0;
@@ -1027,6 +1104,7 @@
   nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') (codeIn.value ? $('btn-join') : $('btn-create')).click(); });
   $('btn-connect-cancel').onclick = () => goHome('');
   $('btn-start').onclick = doStart;
+  $('btn-addbot').onclick = addBot;
   $('btn-leave-lobby').onclick = () => { if (inSettings) { inSettings = false; render(); } else leave(); };
   $('btn-leave').onclick = leave;
   function inviteLink() { const ps = new URLSearchParams(location.search); const peer = ps.get('peer'); return `${location.origin}${location.pathname}?room=${code}${peer ? '&peer=' + encodeURIComponent(peer) : ''}`; }

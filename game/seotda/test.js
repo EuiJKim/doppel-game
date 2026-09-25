@@ -529,4 +529,14 @@ t('진 사람이 다음 게임을 고른다 (가장 많이 잃은 사람), 본�
   assert.equal(g2.view('p0').picker, null);
 });
 
+t('봇: 플레이어로 참가, 스냅샷 복원 후에도 접속 상태', () => {
+  const g = mk(['a']);
+  const b = g.addPlayer('bot1', '우영봇', 'woo', true);
+  assert(b.bot); assert.equal(g.view('p0').players.find(p => p.id === 'bot1').bot, true);
+  assert(g.canStart());
+  g.startHand(); while (g.phase === 'betting') g.act(g.hand.turn, 'check');
+  const g2 = Game.restore(JSON.parse(JSON.stringify(g.snapshot('p0'))), 'p0');
+  assert.equal(g2.player('bot1').connected, true); assert(g2.player('bot1').bot);
+});
+
 console.log(`\n${n} tests passed`);

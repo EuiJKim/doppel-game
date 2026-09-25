@@ -288,6 +288,7 @@ input:focus { border-color: var(--accent); }
 .hist-row b { color: var(--ink); }
 .hist-row .hh { color: var(--accent); }
 .seat.away { opacity: 0.45; }
+.bot-tag { font-size: 10px; color: #9ad; border: 1px solid #47a; border-radius: 6px; padding: 0 4px; margin-left: 3px; vertical-align: middle; }
 .seat-status.away { color: #ffb347; }
 .migrate { position: absolute; left: 0; right: 0; top: 40%; text-align: center; z-index: 12; background: rgba(0, 0, 0, 0.8); padding: 16px; font-size: 15px; font-weight: 800; color: var(--accent); }
 .actions .seg { grid-column: 1 / -1; }
