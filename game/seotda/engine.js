@@ -32,6 +32,7 @@
       this.handNo = 0;
       this.log = [];
       this.picker = null; this.picked = null;
+      this.loser = null;          // 직전 판에 가장 많이 잃은 사람 — 다음 판을 시작할 권한
       this.history = [];
       this.lastDealerSeat = null;
       this.version = 0;
@@ -43,7 +44,7 @@
     snapshot(hostId) {
       const h = this.hand;
       return {
-        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, picker: this.picker,
+        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, picker: this.picker, loser: this.loser,
         players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats, bot: !!p.bot })),
         refund: h && this.inProgress() ? { ...h.contrib, __carry: h.carry } : null,
         carry: h && this.phase === 'result' && h.result && h.result.redeal ? h.pot : 0,
@@ -53,7 +54,7 @@
     static restore(snap, newHostId, rng) {
       const g = new Game(snap.settings, rng);
       g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId || !!p.bot }));   // 봇은 새 방장이 계속 돌린다
-      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.picker = snap.picker || null;
+      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.picker = snap.picker || null; g.loser = snap.loser || null;
       g.history = snap.history || []; g.log = snap.log || [];
       g.phase = 'lobby';
       const oldHost = g.players.find(p => p.id === snap.hostId);
@@ -182,6 +183,9 @@
     }
     canExtend(id) { const h = this.hand; return !!(h && this.settings.turnSec && !h.extended.has(id) && ((this.phase === 'betting' && h.turn === id) || (this.phase === 'choosing' && this._inLiveHand(id) && !h.chosen[id]))); }
     canStart() { return !this.inProgress() && this.eligible().length >= 2; }
+    /* 다음 판을 시작하는 사람: 진 사람(접속 중이면). 없으면 방장(null) */
+    starter() { const p = this.loser && this.player(this.loser); return p && p.connected && !p.away ? p.id : null; }
+    startBy(id) { if (this.starter() !== id) return false; return this.startHand(); }
 
     /* ── 판 시작 ── */
     startHand() {
@@ -200,6 +204,7 @@
 
       this.handNo++;
       this.picker = null; this.picked = null;
+      const prevLoser = this.loser; this.loser = null;
       const order = this.seated().filter(p => participants.includes(p.id)).map(p => p.id);
       let dealer;
       if (redeal && prev && order.includes(prev.dealer)) dealer = prev.dealer;
@@ -217,7 +222,7 @@
         deck: R.shuffle(this.rng), cards: {}, board: [], boardHidden: 0, folded: new Set(), allin: new Set(),
         contrib: {}, pot: carry, carry, street: 0, stageIdx: -1, stageLabel: '',
         bets: {}, curBet: 0, acted: new Set(), raises: 0, turn: null, turnAt: 0,
-        chosen: {}, opened: {}, chooseAt: 0, result: null, actions: [], extended: new Set(),
+        chosen: {}, opened: {}, chooseAt: 0, result: null, actions: [], extended: new Set(), prevLoser,
       };
       for (const id of participants) { h.cards[id] = []; h.contrib[id] = 0; if (this.player(id).chips === 0) h.allin.add(id); }
       this.phase = 'betting';
@@ -451,8 +456,8 @@
       if (!result.redeal) {
         let worst = null, worstNet = 0;
         for (const id of h.order) { const net = (payouts[id] || 0) - h.contrib[id]; if (net < worstNet) { worstNet = net; worst = id; } }
-        this.picker = worst;
-      }
+        this.picker = worst; this.loser = worst;
+      } else this.loser = h.prevLoser || null;   // 재경기면 직전 판의 진 사람이 그대로 시작
       /* 전적·기록 */
       for (const id of h.participants) {
         const p = this.player(id); if (!p) continue;
@@ -538,7 +543,7 @@
         lastAction: h && h.actions.length ? { ...h.actions[h.actions.length - 1], n: h.actions.length } : null,
         canExtend: this.canExtend(forId), history: this.history.slice(-12),
         picker: s.loserPicks ? this.picker : null, pickerName: s.loserPicks && this.picker && this.player(this.picker) ? this.player(this.picker).name : null, picked: this.picked,
-        canStart: this.canStart(),
+        canStart: this.canStart(), starter: this.starter(), starterName: this.starter() ? this.player(this.starter()).name : null,
         result: isResult ? h.result : null,
         log: this.log.slice(-30),
       };

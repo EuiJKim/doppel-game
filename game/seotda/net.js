@@ -3,7 +3,7 @@
  * 시그널링만 PeerJS 공개 브로커를 쓰고, 이후 데이터는 브라우저끼리 직접 오간다.
  */
 const SeotdaNet = (() => {
-  const PREFIX = 'doppel-seotda-';
+  let PREFIX = 'doppel-seotda-';   // 게임별 방 ID 접두어 (홀덤 등은 setPrefix로 바꿔 쓴다 — 방 코드가 같아도 다른 게임 방에 안 붙게)
   const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 헷갈리는 0/O/1/I 제외
 
   function makeCode(len = 5) {
@@ -226,5 +226,5 @@ const SeotdaNet = (() => {
     return out;
   }
 
-  return { Host, Client, makeCode, normCode, PREFIX, customServer, diagnose, inAppBrowser, isIOS };
+  return { Host, Client, makeCode, normCode, get PREFIX() { return PREFIX; }, setPrefix(p) { PREFIX = String(p); }, customServer, diagnose, inAppBrowser, isIOS };
 })();
