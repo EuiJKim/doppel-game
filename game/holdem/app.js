@@ -1,23 +1,23 @@
-/* 섯다 온라인 — UI + 호스트/클라이언트 흐름
- * 호스트: SeotdaEngine.Game 을 갖고, 매 변화마다 각 플레이어에게 '그 사람 시점의 뷰'만 보낸다 (남의 패는 절대 전송 안 함).
+/* 홀덤 온라인 — UI + 호스트/클라이언트 흐름 (섯다 온라인과 같은 뼈대)
+ * 호스트: HoldemEngine.Game 을 갖고, 매 변화마다 각 플레이어에게 '그 사람 시점의 뷰'만 보낸다 (남의 패는 절대 전송 안 함).
  * 클라이언트: 뷰를 받아 그리고, 행동만 보낸다.
- * 쪼기: 내 카드는 뒤집혀 오고 5가지 방식(위로·옆으로·모서리·뒤집기·살살)으로 직접 연다 — 로컬 연출, 판정과 무관.
  */
 (() => {
   const $ = id => document.getElementById(id);
-  const R = SeotdaRules, E = SeotdaEngine, N = SeotdaNet, CARDS = SeotdaCards;
-  const LS = { name: 'seotda_name', token: 'seotda_token', mute: 'seotda_mute', peek: 'seotda_peek', bgm: 'seotda_bgm', char: 'seotda_char' };
-  /* 캐릭터 3종: 자리 아바타 + 상황별 한마디 */
+  const R = HoldemRules, E = HoldemEngine, N = SeotdaNet, CARDS = HoldemCards;
+  N.setPrefix('doppel-holdem-');
+  const ASSETS = '../seotda/';
+  const LS = { name: 'seotda_name', token: 'holdem_token', mute: 'seotda_mute', peek: 'seotda_peek', bgm: 'seotda_bgm', char: 'seotda_char' };
   const CHARS = {
-    dog: { name: '블랙 강아지', img: 'avatars/dog.jpg', q: { bet: ['멍!', '컹컹!', '으르렁…', '왈!'], die: ['깨갱…', '낑…'], win: ['멍멍멍!!', '왈왈!'], call: ['멍.', '컹.'], allin: ['왈왈왈왈!!!', '으르르릉!!'] } },
-    sunji: { name: '홍어먹는 순지형', img: 'avatars/sunji.jpg', q: { bet: ['홍어 한 점 하고 간다', '삭힌 만큼 간다', '이건 먹어야지'], die: ['아 삭았다…', '다음 판에 보자'], win: ['홍어값 나왔다', '크~ 알싸하다'], call: ['콜.', '한 점만 더'], allin: ['홍어 한 마리 통째로!', '삭힐 만큼 삭혔다, 간다!'] } },
-    kang: { name: '일베하는 강현이', img: 'avatars/kang.jpg', q: { bet: ['가즈아~', 'ㅋㅋㅋ 받고 더', '이건 못 참지'], die: ['아 몰랑', '에바다 에바'], win: ['ㅋㅋㅋㅋ 개이득', '인정?'], call: ['ㅇㅇ 콜', '따라감'], allin: ['풀매수 가즈아!!', '인생은 한방 ㅋㅋ'] } },
-    woo: { name: '헛둘우영', img: 'avatars/woo.webp', still: 'avatars/woo.jpg', anim: true, q: { bet: ['헛둘헛둘!', '헛둘! 받고 더', '헛둘… 간다!'], die: ['헛… 둘…', '헛둘 다음 판에', '헛둘 삐끗'], win: ['헛둘헛둘 이겼다!', '헛둘! 접수', '헛둘헛둘 헛둘헛둘~'], call: ['헛둘 콜', '둘… 콜'], allin: ['헛둘헛둘헛둘 올인!!', '헛둘! 다 걸어!'] } },
+    dog: { name: '블랙 강아지', img: ASSETS + 'avatars/dog.jpg', q: { bet: ['멍!', '컹컹!', '으르렁…', '왈!'], die: ['깨갱…', '낑…'], win: ['멍멍멍!!', '왈왈!'], call: ['멍.', '컹.'], allin: ['왈왈왈왈!!!', '으르르릉!!'] } },
+    sunji: { name: '홍어먹는 순지형', img: ASSETS + 'avatars/sunji.jpg', q: { bet: ['홍어 한 점 하고 간다', '삭힌 만큼 간다', '이건 먹어야지'], die: ['아 삭았다…', '다음 판에 보자'], win: ['홍어값 나왔다', '크~ 알싸하다'], call: ['콜.', '한 점만 더'], allin: ['홍어 한 마리 통째로!', '삭힐 만큼 삭혔다, 간다!'] } },
+    kang: { name: '일베하는 강현이', img: ASSETS + 'avatars/kang.jpg', q: { bet: ['가즈아~', 'ㅋㅋㅋ 받고 더', '이건 못 참지'], die: ['아 몰랑', '에바다 에바'], win: ['ㅋㅋㅋㅋ 개이득', '인정?'], call: ['ㅇㅇ 콜', '따라감'], allin: ['풀매수 가즈아!!', '인생은 한방 ㅋㅋ'] } },
+    woo: { name: '헛둘우영', img: ASSETS + 'avatars/woo.webp', still: ASSETS + 'avatars/woo.jpg', anim: true, q: { bet: ['헛둘헛둘!', '헛둘! 받고 더', '헛둘… 간다!'], die: ['헛… 둘…', '헛둘 다음 판에', '헛둘 삐끗'], win: ['헛둘헛둘 이겼다!', '헛둘! 접수', '헛둘헛둘 헛둘헛둘~'], call: ['헛둘 콜', '둘… 콜'], allin: ['헛둘헛둘헛둘 올인!!', '헛둘! 다 걸어!'] } },
   };
   let myChar = localStorage.getItem(LS.char) || 'dog'; if (!CHARS[myChar]) myChar = 'dog';
   const avatarSrc = key => (CHARS[key] || CHARS.dog).img;
   const avatarCls = key => 'avatar' + ((CHARS[key] || CHARS.dog).anim ? ' anim' : '');
-  const bubbles = {};   // pid → { text, until }
+  const bubbles = {};
   function say(pid, kind) {
     const p = view && view.players.find(x => x.id === pid); if (!p) return;
     const c = CHARS[p.avatar] || CHARS.dog; const list = c.q[kind] || c.q.bet;
@@ -26,8 +26,6 @@
   const bubbleHtml = pid => { const b = bubbles[pid]; return b && b.until > Date.now() ? `<div class="bubble ${b.chat ? 'chat' : ''}" data-k="${b.k}">${esc(b.text)}</div>` : ''; };
   let bgmOn = localStorage.getItem(LS.bgm) !== '0';
 
-  /* 토큰은 탭 단위(sessionStorage): 같은 브라우저에서 방장 탭 + 참가 탭을 열어도 다른 사람으로 잡힌다.
-   * 새로고침은 같은 탭이라 같은 자리로 복귀. 탭을 닫았다 다시 열면 같은 닉네임의 빈자리를 이어받는다(엔진). */
   let token = null;
   try { token = sessionStorage.getItem(LS.token); } catch (e) { }
   if (!token) { token = 'u' + N.makeCode(10).toLowerCase(); try { sessionStorage.setItem(LS.token, token); } catch (e) { } }
@@ -40,8 +38,7 @@
   let lastCardKey = {};
   let muted = localStorage.getItem(LS.mute) === '1';
   let peekMode = localStorage.getItem(LS.peek) || 'up';
-  let revealed = new Set(), revealedHand = 0;   // 내가 연 카드 id (판마다 초기화)
-  let selected = [];                            // 3장 섯다 선택 인덱스
+  let revealed = new Set(), revealedHand = 0;
   let meCardsKey = '', peekActive = false, peekPending = false, goodKey = '';
   let rebuyDismissed = 0;
 
@@ -83,7 +80,6 @@
       big: () => [392, 523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.3, 'square', 0.05, null, i * 0.08)),
       lose: () => tone(220, 0.35, 'sawtooth', 0.06, 110),
       die: () => tone(140, 0.2, 'sawtooth', 0.05, 80),
-      /* 내 패가 좋을 때: 땡·특수 = 짧은 팡파르, 광땡 = 긴 팡파르 */
       good: () => { [659, 784, 988].forEach((f, i) => tone(f, 0.18, 'triangle', 0.1, null, i * 0.07)); tone(1318, 0.5, 'triangle', 0.1, null, 0.24); },
       great: () => { [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, 0.35, 'square', 0.05, null, i * 0.09)); [262, 330].forEach((f, i) => tone(f, 1.2, 'sawtooth', 0.04, null, 0.3 + i * 0.05)); },
       tick: () => tone(1800, 0.05, 'square', 0.05),
@@ -94,11 +90,10 @@
       whoosh: () => tone(900, 0.12, 'triangle', 0.04, 200),
       coin: (i) => tone(1500 + (i % 4) * 180, 0.12, 'sine', 0.05, 2600),
       pop: () => tone(500, 0.08, 'square', 0.05, 900),
-      ctx: () => ctx,
+      flop: () => { [420, 560, 700].forEach((f, i) => tone(f, 0.12, 'triangle', 0.07, null, i * 0.1)); },
     };
   })();
 
-  /* ── 숫자 카운트업 (판돈·내 돈) ── */
   const tweens = new Map();
   function tweenNum(el, to, ms) {
     const from = +String(el.dataset.v ?? el.textContent.replace(/[^\d-]/g, '')) || 0;
@@ -113,16 +108,16 @@
     tweens.set(el, requestAnimationFrame(step));
   }
   let streak = 0, renderedTurn = null, armedTurnAt = 0, lastTickSec = -1;
-  let sd = null, wakeLock = null;   // sd: 쇼다운 순차 공개 상태
-  let lastSnap = null, migrating = false, takeoverTimer = null;   // 방장 이전
-  const QUICK = ['ㅋㅋㅋ', '빨리 해', '블러핑이지?', '올인 가자', '아 망했다', 'ㄱㄱ', '한 판 더'];
+  let sd = null, wakeLock = null;
+  let lastSnap = null, migrating = false, takeoverTimer = null;
+  const QUICK = ['ㅋㅋㅋ', '빨리 해', '블러핑이지?', '올인 가자', '아 망했다', 'ㄱㄱ', '한 판 더', '나이스 핸드'];
 
-  /* ── BGM: 합성 긴장감 루프 (A단조 베이스 + 하이햇 + 패드, 내 차례엔 심장박동) ── */
+  /* ── BGM ── */
   const Bgm = (() => {
     let ctx = null, master = null, timer = null, step = 0, nextT = 0, playing = false, tense = false;
-    const BPM = 96, STEP = 60 / BPM / 4;                       // 16분음표
-    const BASS = [45, 0, 0, 45, 0, 0, 48, 0, 40, 0, 0, 40, 0, 0, 43, 0, 45, 0, 0, 45, 0, 0, 48, 0, 41, 0, 0, 41, 0, 0, 43, 43];
-    const PAD = [[45, 52, 57], [41, 48, 53], [43, 50, 55], [40, 47, 52]];
+    const BPM = 92, STEP = 60 / BPM / 4;
+    const BASS = [43, 0, 0, 43, 0, 0, 46, 0, 38, 0, 0, 38, 0, 0, 41, 0, 43, 0, 0, 43, 0, 0, 46, 0, 39, 0, 0, 39, 0, 0, 41, 41];
+    const PAD = [[43, 50, 55], [39, 46, 51], [41, 48, 53], [38, 45, 50]];
     const hz = n => 440 * Math.pow(2, (n - 69) / 12);
     function ensure() {
       if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.0001; master.connect(ctx.destination); }
@@ -148,7 +143,6 @@
       start() { if (!ensure() || playing) return; playing = true; step = 0; nextT = ctx.currentTime + 0.05; master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setValueAtTime(0.0001, ctx.currentTime); master.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 1.5); timer = setInterval(tickSched, 100); },
       stop() { if (!playing) return; playing = false; clearInterval(timer); if (master) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setValueAtTime(master.gain.value, ctx.currentTime); master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6); } },
       setTense(v) { tense = !!v; },
-      playing: () => playing,
     };
   })();
 
@@ -160,7 +154,6 @@
   const won = n => fmt(n) + '원';
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  /* ── 칩 더미: 금액 → 5000/1000/500/100 칩 기둥 ── */
   function stackHtml(amount, label) {
     if (!amount) return '';
     let rest = amount; const cols = [];
@@ -171,13 +164,12 @@
     }
     return cols.map(c => `<div class="col">${Array.from({ length: c.k }, (_, i) => `<div class="chip ${c.cls}" style="transform:translateY(${-i * 4}px)"></div>`).join('')}</div>`).join('') + (label === false ? '' : `<span class="amt">${fmt(amount)}</span>`);
   }
-  /* ── 카드 ── */
   function cardHtml(id, size, extra) {
     const c = R.cardById(id);
-    return `<div class="card ${size || ''} ${extra || ''}" data-cid="${id}" title="${c.m}월 ${c.name} ${c.k === '열' ? '열끗' : c.k}"><div class="face">${CARDS.face(c)}</div></div>`;
+    return `<div class="card ${size || ''} ${extra || ''}" data-cid="${id}" title="${c.name}"><div class="face">${CARDS.face(c)}</div></div>`;
   }
   function backHtml(size, extra) { return `<div class="card back ${size || ''} ${extra || ''}">${CARDS.BACK}</div>`; }
-  const sdGate = p => !!(sd && view && sd.handNo === view.handNo && !sd.done && p.id !== myId && !view.spectating);   // 관전자는 이미 다 보고 있으니 순차 공개로 가리지 않는다
+  const sdGate = p => !!(sd && view && sd.handNo === view.handNo && !sd.done && p.id !== myId && !view.spectating);
   function cardsHtml(p, size, usedIds, delayIdx) {
     const gate = sdGate(p);
     const faces = p.cards ? (gate ? Math.min(p.cards.length, sd.open[p.id] || 0) : p.cards.length) : 0;
@@ -193,21 +185,16 @@
       if (p.cards && i < faces) {
         const justShown = i >= pf && !isNew;
         const used = showHl && usedIds && usedIds.includes(p.cards[i]);
-        const dim = showHl && usedIds && usedIds.length && !used && p.cards.length > 2;
+        const dim = showHl && usedIds && usedIds.length && !used;
         const delay = justShown && !gate ? ` style="animation-delay:${(0.2 + (delayIdx || 0) * 0.3).toFixed(2)}s;opacity:0;animation-fill-mode:both"` : '';
         s += cardHtml(p.cards[i], size, (isNew ? 'deal' : justShown ? 'flip' : '') + (used ? ' used' : '') + (dim ? ' dim' : '')).replace('<div class="card', `<div${delay} class="card`);
-      } else if (p.open != null && i === p.cardCount - 1 && !p.cards) {
-        s += cardHtml(p.open, size, 'opened ' + (lastOpen[p.id] === p.open ? '' : 'flip')).replace('</div></div>', '</div><div class="tag open">공개</div></div>');
-        lastOpen[p.id] = p.open;
       } else s += backHtml(size, isNew ? 'deal' : '');
     }
     return s;
   }
-  const lastOpen = {};
 
-  /* ── 공통 명령 (호스트면 직접, 클라이언트면 전송) ── */
-  function doAction(type) { if (role === 'host') game.act(myId, type); else client.send({ t: 'act', type }); }
-  function doChoose(idxs) { if (role === 'host') game.choose(myId, idxs); else client.send({ t: 'choose', idxs }); }
+  /* ── 공통 명령 ── */
+  function doAction(type, to) { if (role === 'host') game.act(myId, type, to); else client.send({ t: 'act', type, to }); }
   function doRebuy() { $('rebuy').classList.add('hidden'); if (role === 'host') game.rebuy(myId); else client.send({ t: 'rebuy' }); }
   function doChat(text) {
     text = text.trim().slice(0, 60); if (!text) return;
@@ -219,7 +206,6 @@
     if (role === 'host') { if (!game.startHand()) toast('돈이 있는 사람이 2명 이상 있어야 시작할 수 있어요'); }
     else client.send({ t: 'start' });
   }
-  function doPick(mode) { if (role === 'host') game.pickMode(myId, mode); else client.send({ t: 'pick', mode }); }
   function doAway(v) { if (role === 'host') game.setAway(myId, v); else client.send({ t: 'away', away: !!v }); }
   function doExtend() { if (role === 'host') game.extendTurn(myId); else client.send({ t: 'extend' }); }
   function doSettings(patch) { if (role !== 'host') return; if (!game.updateSettings(patch)) toast('판이 끝난 뒤에 바꿀 수 있어요'); }
@@ -228,14 +214,11 @@
   function withTimer(v) {
     const s = v.settings;
     v.turnLeft = null;
-    if (s.turnSec > 0) {
-      if (v.phase === 'betting' && v.turn) v.turnLeft = Math.max(0, v.turnAt + s.turnSec * 1000 - Date.now());
-      else if (v.phase === 'choosing') v.turnLeft = Math.max(0, v.chooseAt + s.turnSec * 1000 - Date.now());
-    }
+    if (s.turnSec > 0 && v.phase === 'betting' && v.turn) v.turnLeft = Math.max(0, v.turnAt + s.turnSec * 1000 - Date.now());
     return v;
   }
   function hostBroadcast() {
-    const snap = game.snapshot(myId);   // 카드는 없다. 방장이 끊기면 이걸로 다음 사람이 방을 이어받는다
+    const snap = game.snapshot(myId);
     for (const p of game.players) if (p.id !== myId && p.connected && !p.bot) host.send(p.id, { t: 'state', view: withTimer(game.view(p.id)), snap });
     const prevV = view;
     receiveView(withTimer(game.view(myId)));
@@ -249,13 +232,11 @@
       onLeave: pid => game.disconnectPlayer(pid),
       onMessage: (pid, msg) => {
         const p = game.player(pid); if (!p) return;
-        if (msg.t === 'act') game.act(pid, String(msg.type));
-        else if (msg.t === 'choose') game.choose(pid, Array.isArray(msg.idxs) ? msg.idxs.map(Number) : []);
+        if (msg.t === 'act') game.act(pid, String(msg.type), msg.to != null ? +msg.to : undefined);
         else if (msg.t === 'rebuy') game.rebuy(pid);
         else if (msg.t === 'away') game.setAway(pid, !!msg.away);
-        else if (msg.t === 'pick') game.pickMode(pid, String(msg.mode));
-        else if (msg.t === 'start') game.startBy(pid);
         else if (msg.t === 'extend') game.extendTurn(pid);
+        else if (msg.t === 'start') game.startBy(pid);
         else if (msg.t === 'chat') hostChat(p.name, String(msg.text || '').slice(0, 60));
       },
       onError: (msg, err) => {
@@ -264,8 +245,8 @@
       },
     };
   }
-  /* ── 봇(컴퓨터 플레이어): 방장 브라우저에서 돈다 ── */
-  const BOT_TAUNT = { win: ['ㅋㅋ 접수', '다음 판도 내 거', '이 정도야 뭐', '고마워요~'], lose: ['아 몰라', '다음 판에 보자', '…운이 없네'], big: ['이건 못 참지 ㅋㅋ', '올려볼까?'] };
+  /* ── 봇 ── */
+  const BOT_TAUNT = { win: ['ㅋㅋ 접수', '다음 판도 내 거', '이 정도야 뭐', '고마워요~', '나이스 핸드… 나한테'], lose: ['아 몰라', '다음 판에 보자', '…운이 없네', '리버가 미쳤네'] };
   let botTimer = null;
   function addBot() {
     if (role !== 'host') return;
@@ -275,61 +256,66 @@
     const base = CHARS[k].name.split(' ').pop().replace(/이$/, '') + '봇';
     let name = base, i = 2; while (game.players.some(p => p.name === name)) name = base + (i++);
     const p = game.addPlayer('bot_' + N.makeCode(6).toLowerCase(), name, k, true);
-    if (!p) toast('자리가 꽉 찼어요'); else { p.brain = { aggr: 0.3 + Math.random() * 0.45, bluff: 0.08 + Math.random() * 0.15 }; }
+    if (!p) toast('자리가 꽉 찼어요'); else { p.brain = { aggr: 0.3 + Math.random() * 0.45, bluff: 0.06 + Math.random() * 0.14 }; }
   }
   function botStrength(id) {
-    const h = game.hand; const pool = game.pool(id); const s = game.settings;
-    if (pool.length >= 2) {
-      const hd = R.bestPair(pool).hand;
-      let v = hd.tier === '광땡' ? 1 : hd.tier === '땡' ? 0.72 + (hd.score - 900) * 0.025 : hd.tier === '특수' ? 0.58 + (hd.score - 810) * 0.002 : 0.2 + (hd.score - 700) * 0.045;
-      if (hd.special === '땡잡이' || hd.special === '암행어사') v = Math.max(v, 0.62);
-      if (h.mode === 'holdem' && h.boardHidden) v = v * 0.75 + 0.1;   // 공유 카드 아직 안 열림
-      return Math.min(1, v);
-    }
-    const c = R.cardById(pool[0]);
-    return c.k === '광' ? 0.55 : c.m === 10 ? 0.5 : c.m === 1 || c.m === 4 ? 0.47 : 0.4;
+    const h = game.hand; const hole = h.cards[id];
+    if (h.board.length < 3) return R.holeStrength(hole);
+    const hd = R.evalBest(hole.concat(h.board));
+    const usesHole = hd.cards.some(c => hole.includes(c));
+    const hi = Math.max(...hole.map(c => R.cardById(c).r)) / 14;
+    let v;
+    if (hd.cat === 0) v = 0.12 + hi * 0.18;
+    else if (hd.cat === 1) v = 0.32 + hd.tb[0] / 14 * 0.16 + (usesHole ? 0.06 : -0.08);
+    else if (hd.cat === 2) v = 0.56 + (usesHole ? 0.06 : -0.1);
+    else if (hd.cat === 3) v = 0.7 + (usesHole ? 0.06 : -0.1);
+    else if (hd.cat === 4) v = 0.8;
+    else if (hd.cat === 5) v = 0.86;
+    else v = 0.95;
+    /* 보드가 열릴수록 확정 강도. 아직 카드가 남았으면 조금 보수적으로 */
+    if (h.board.length < 5) v -= 0.04;
+    return Math.max(0, Math.min(1, v));
   }
   function botDecide(id) {
     const opts = game.actionsFor(id); if (!opts.length) return null;
-    const p = game.player(id); const br = p.brain || (p.brain = { aggr: 0.5, bluff: 0.12 });
+    const p = game.player(id); const br = p.brain || (p.brain = { aggr: 0.5, bluff: 0.1 });
     const has = t => opts.find(o => o.type === t);
     const call = has('call'); const callAmt = call ? call.amount : 0;
     const pot = game.hand.pot;
-    let s = botStrength(id) + (Math.random() - 0.5) * 0.16 + (br.aggr - 0.5) * 0.12;
+    let s = botStrength(id) + (Math.random() - 0.5) * 0.14 + (br.aggr - 0.5) * 0.1;
     const bluffing = Math.random() < br.bluff;
-    const raise = s > 0.9 && has('allin') && br.aggr > 0.6 && Math.random() < 0.5 ? 'allin' : s > 0.8 && has('half') ? 'half' : s > 0.66 && (has('quarter') || has('ddadang') || has('ping')) ? (has('quarter') ? 'quarter' : has('ddadang') ? 'ddadang' : 'ping') : null;
-    if (callAmt === 0) return raise || (bluffing && (has('ping') || has('quarter')) ? (has('ping') ? 'ping' : 'quarter') : 'check');
+    const rz = has('raise') || has('bet');
+    const sizeTo = f => rz ? Math.max(rz.min, Math.min(rz.max, game.hand.curBet + Math.round((pot + callAmt) * f / 10) * 10)) : 0;
+    let raise = null;
+    if (rz && (s > 0.66 || bluffing)) raise = { type: rz.type, to: sizeTo(s > 0.85 ? 1 : s > 0.75 ? 0.66 : 0.5) };
+    if (has('allin') && s > 0.92 && br.aggr > 0.55 && Math.random() < 0.5) raise = { type: 'allin' };
+    if (!rz && has('allin') && s > 0.8 && callAmt < p.chips * 0.5) raise = { type: 'allin' };
+    if (callAmt === 0) return raise || { type: 'check' };
     const odds = callAmt / (pot + callAmt);
-    if (callAmt >= p.chips * 0.6 && s < 0.7 && !bluffing) return 'die';
-    if (s < Math.max(0.3, odds * 1.5) && !bluffing) return 'die';
-    return raise || 'call';
+    if (callAmt >= p.chips * 0.6 && s < 0.72 && !bluffing) return { type: 'fold' };
+    if (s < Math.max(0.28, odds * 1.6) && !bluffing) return { type: 'fold' };
+    return raise || { type: 'call' };
   }
   function scheduleBots() {
     clearTimeout(botTimer);
     if (role !== 'host' || !game) return;
     const h = game.hand;
-    const think = 900 + Math.random() * 1400;
+    const think = 900 + Math.random() * 1500;
     if (game.phase === 'betting' && h && h.turn) {
       const p = game.player(h.turn);
-      if (p && p.bot) { const turn = h.turn, at = h.turnAt; botTimer = setTimeout(() => { if (game.phase === 'betting' && game.hand === h && h.turn === turn && h.turnAt === at) { const a = botDecide(turn); if (a) game.act(turn, a); } }, Math.max(think, dealEndsAt - Date.now() + 400)); }
-      return;
-    }
-    if (game.phase === 'choosing' && h) {
-      const pend = game.players.filter(p => p.bot && h.participants.includes(p.id) && !h.folded.has(p.id) && !h.chosen[p.id]);
-      if (pend.length) { botTimer = setTimeout(() => { if (game.phase !== 'choosing' || game.hand !== h) return; const p = pend[0]; const pool = game.pool(p.id); const b = R.bestPair(pool); game.choose(p.id, h.mode === '3' ? [pool.findIndex(c => !b.cards.includes(c))] : b.cards.map(c => pool.indexOf(c))); }, think); }
+      if (p && p.bot) { const turn = h.turn, at = h.turnAt; botTimer = setTimeout(() => { if (game.phase === 'betting' && game.hand === h && h.turn === turn && h.turnAt === at) { const a = botDecide(turn); if (a) game.act(turn, a.type, a.to); } }, Math.max(think, dealEndsAt - Date.now() + 400)); }
       return;
     }
     if (!game.inProgress()) {
       const broke = game.players.find(p => p.bot && game.canRebuy(p.id));
       if (broke) { botTimer = setTimeout(() => { if (game.canRebuy(broke.id)) game.rebuy(broke.id); }, 1200); return; }
-      if (game.picker && game.player(game.picker) && game.player(game.picker).bot) { const id = game.picker; botTimer = setTimeout(() => { if (game.picker === id) game.pickMode(id, ['2', '3', 'holdem'][Math.floor(Math.random() * 3)]); }, 1800); return; }
       const st = game.starter();
       if (st && game.player(st) && game.player(st).bot && game.canStart()) { botTimer = setTimeout(() => { if (game.starter() === st && game.canStart()) game.startBy(st); }, 6000); }
     }
   }
   function botTaunts(prev, v) {
     if (role !== 'host' || !v.result || (prev && prev.phase === 'result')) return;
-    const r = v.result; if (r.redeal) return;
+    const r = v.result;
     for (const p of game.players) {
       if (!p.bot || !v.players.find(x => x.id === p.id && x.inHand)) continue;
       const won = r.winners.includes(p.id); const lines = won ? BOT_TAUNT.win : BOT_TAUNT.lose;
@@ -344,9 +330,6 @@
     if (game.phase === 'betting' && h.turn) {
       const turn = h.turn, at = h.turnAt;
       hostTimer = setTimeout(() => { if (game.phase === 'betting' && game.hand === h && h.turn === turn && h.turnAt === at) game.autoAct(turn); }, at + s.turnSec * 1000 - Date.now() + 300);
-    } else if (game.phase === 'choosing') {
-      const at = h.chooseAt;
-      hostTimer = setTimeout(() => { if (game.phase === 'choosing' && game.hand === h && h.chooseAt === at) game.autoChoose(); }, at + s.turnSec * 1000 - Date.now() + 300);
     }
   }
   function hostChat(from, text) {
@@ -387,28 +370,27 @@
     client.connect();
   }
 
-  /* ── 방장 이전: 방장이 끊기면 자리 순서대로 다음 사람이 같은 방 코드로 방을 이어받는다 ── */
+  /* ── 방장 이전 ── */
   function onHostDown() {
     if (role !== 'client' || migrating || !lastSnap) return;
     migrating = true;
     const cands = lastSnap.players.filter(p => p.connected && p.id !== lastSnap.hostId).sort((a, b) => a.seat - b.seat);
     const rank = cands.findIndex(p => p.id === myId);
     if (rank < 0) return;
-    const wait = rank === 0 ? 2500 : 2500 + rank * 9000;   // 1순위가 못 이어받으면 다음 순위가 9초 뒤에
+    const wait = rank === 0 ? 2500 : 2500 + rank * 9000;
     toast(rank === 0 ? '방장 연결 끊김 — 내가 방을 이어받는 중…' : `방장 연결 끊김 — ${cands[0].name}이(가) 이어받는 중…`, 4000);
     clearTimeout(takeoverTimer);
     takeoverTimer = setTimeout(() => tryTakeover(), wait);
   }
   function tryTakeover() {
     if (role !== 'client' || !migrating || !lastSnap) return;
-    if (client && client.conn && client.conn.open) { migrating = false; return; }   // 그 사이에 재접속됨
+    if (client && client.conn && client.conn.open) { migrating = false; return; }
     const snap = lastSnap;
     try { client.close(); } catch (e) { } client = null;
     role = 'host';
     game = E.Game.restore(snap, myId);
     game.onChange = hostBroadcast;
     host = new N.Host(code, hostHandlers(() => {
-      /* 8번 시도해도 이전 방장 ID를 못 잡음 → 누군가 이미 이어받았다고 보고 클라이언트로 재참가 */
       host.close(); host = null; role = 'client'; game = null; migrating = false;
       joinRoom(code, myName);
     }));
@@ -417,16 +399,20 @@
     toast('방장을 이어받았어요. 친구들이 다시 붙는 중…', 4000);
   }
 
-  /* ── 뷰 수신 → 이펙트 판단 → 렌더 ── */
+  /* ── 뷰 수신 → 이펙트 → 렌더 ── */
   function receiveView(v) {
     const prev = view; view = v;
     if (v.turnLeft != null) { localDeadline = Date.now() + v.turnLeft; deadlineTotal = v.settings.turnSec * 1000; } else localDeadline = 0;
-    if (v.handNo !== revealedHand) { revealed = new Set(); revealedHand = v.handNo; selected = []; lastCardKey = {}; meCardsKey = ''; $('me-cards').innerHTML = ''; $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); $('winfx').classList.add('hidden'); $('reaction').classList.add('hidden'); renderedTurn = null; if (sd) { sd.timers.forEach(clearTimeout); sd = null; $('sdstage').classList.add('hidden'); $('screen-table').querySelector('.felt').classList.remove('dim'); } if (prev) banner(`${v.handNo}판`, 'small', v.modeLabel); }
+    if (v.handNo !== revealedHand) {
+      revealed = new Set(); revealedHand = v.handNo; lastCardKey = {}; meCardsKey = ''; goodKey = ''; $('me-cards').innerHTML = ''; $('board').innerHTML = ''; $('board').dataset.n = 0;
+      $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); $('winfx').classList.add('hidden'); $('reaction').classList.add('hidden'); closeRaise(); renderedTurn = null;
+      if (sd) { sd.timers.forEach(clearTimeout); sd = null; $('sdstage').classList.add('hidden'); $('screen-table').querySelector('.felt').classList.remove('dim'); }
+      if (prev) banner(`${v.handNo}판`, 'small', `블라인드 ${fmt(v.sb)}/${fmt(v.settings.bb)}`);
+    }
     const me = v.players.find(p => p.id === myId);
     if (prev && prev.handNo === v.handNo) effects(prev, v, me);
     else if (prev && v.handNo !== prev.handNo) { Snd.deal(); }
-    /* 선택 단계·결과에서는 내 카드를 자동으로 연다 */
-    if (me && me.cards && (v.phase === 'choosing' || v.phase === 'result')) me.cards.forEach(c => revealed.add(c));
+    if (me && me.cards && v.phase === 'result') me.cards.forEach(c => revealed.add(c));
     render();
   }
   let unread = 0;
@@ -434,7 +420,6 @@
     chatLines.push(line); if (chatLines.length > 60) chatLines.shift(); renderLog();
     const p = view && view.players.find(x => x.name === line.from);
     if (p) { bubbles[p.id] = { text: line.text, until: Date.now() + 4500, k: Math.random(), chat: true }; if (view) renderTable(); }
-    /* 테이블 위 피드 */
     const feed = $('chatfeed');
     if (feed) {
       const el = document.createElement('div'); el.className = 'cf-item';
@@ -469,20 +454,17 @@
     const s = view.settings;
     $('settings').classList.toggle('readonly', !isHost);
     $('settings-who').textContent = isHost ? '' : '(방장만 변경)';
-    $('set-mode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === s.mode));
     const fill = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
-    fill('set-raises', s.maxRaises); fill('set-turn', s.turnSec); fill('set-max', s.maxPlayers); fill('set-chips', s.startChips);
-    if (document.activeElement !== $('set-special')) $('set-special').checked = !!s.special;
-    if (document.activeElement !== $('set-loser')) $('set-loser').checked = s.loserPicks !== false;
+    fill('set-bb', s.bb); fill('set-turn', s.turnSec); fill('set-max', s.maxPlayers); fill('set-chips', s.startChips);
+    $('sb-note').textContent = `스몰 블라인드 ${fmt(view.sb)}원 / 빅 블라인드 ${fmt(s.bb)}원 · 최소 레이즈 폭은 직전 레이즈만큼`;
     if (!settingsBound) {
       settingsBound = true;
-      const push = () => doSettings({ maxRaises: +$('set-raises').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, special: $('set-special').checked, loserPicks: $('set-loser').checked, startChips: +$('set-chips').value });
-      ['set-raises', 'set-turn', 'set-max', 'set-special', 'set-loser', 'set-chips'].forEach(id => { $(id).addEventListener('change', push); $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(id).blur(); push(); } }); });
-      $('set-mode').querySelectorAll('button').forEach(b => b.onclick = () => doSettings({ mode: b.dataset.mode }));
+      const push = () => doSettings({ bb: +$('set-bb').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, startChips: +$('set-chips').value });
+      ['set-bb', 'set-turn', 'set-max', 'set-chips'].forEach(id => { $(id).addEventListener('change', push); $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(id).blur(); push(); } }); });
     }
     const n = view.players.filter(p => p.connected).length;
     $('btn-start').disabled = !(isHost && view.canStart);
-    $('btn-start').textContent = view.handNo ? `다음 판 시작 (${view.nextModeLabel})` : `게임 시작 (${view.nextModeLabel})`;
+    $('btn-start').textContent = view.handNo ? '다음 판 시작' : '게임 시작';
     $('lobby-hint').textContent = isHost ? (view.canStart ? `${n}명 준비됨` : '2명 이상 모이면 시작할 수 있어요 (봇을 넣어도 돼요)') : `방장이 시작하길 기다리는 중 (${n}명)`;
     $('btn-addbot').classList.toggle('hidden', !isHost);
   }
@@ -492,21 +474,15 @@
     const me = view.players.find(p => p.id === myId);
     const isHost = role === 'host';
     const res = view.result;
-    /* 쇼다운 무대가 끝나기 전엔 돈이 안 움직인 것처럼 보여준다 (누가 이겼는지 미리 새지 않게) */
-    const hideMoney = !!(res && !res.redeal && sd && sd.handNo === view.handNo && !sd.done);
+    const hideMoney = !!(res && sd && sd.handNo === view.handNo && !sd.done);
     const shownChips = p => hideMoney ? p.chips - (p.payout || 0) : p.chips;
     const shownPot = hideMoney ? view.players.reduce((a, p) => a + (p.payout || 0), 0) : view.pot;
     $('top-code').textContent = code;
     $('top-hand').textContent = view.handNo ? `${view.handNo}판 · ${view.stageLabel}` : '';
-    $('mode-tag').textContent = view.modeLabel;
-    const topSeg = $('top-mode');
-    if (isHost && !(view.picker && view.picker !== myId)) {
-      topSeg.classList.remove('hidden');
-      topSeg.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); if (!b.onclick) b.onclick = () => { doSettings({ mode: b.dataset.mode }); if (view.phase === 'betting' || view.phase === 'choosing') toast(`다음 판부터 ${E.MODES[b.dataset.mode].label}`); }; });
-    } else topSeg.classList.add('hidden');
+    $('mode-tag').textContent = `블라인드 ${fmt(view.sb)}/${fmt(view.settings.bb)}`;
     { const pe = $('pot'); const prevPot = +pe.dataset.v || 0; tweenNum(pe, shownPot, 500); if (shownPot > prevPot && prevPot) { pe.classList.remove('tick'); void pe.offsetWidth; pe.classList.add('tick'); } }
-    { const pile = $('pot-pile'); const h = stackHtml(view.phase === 'result' && view.result && !view.result.redeal && !hideMoney ? 0 : shownPot, false); if (pile.dataset.k !== h) { pile.innerHTML = h; pile.dataset.k = h; pile.classList.remove('bump'); void pile.offsetWidth; pile.classList.add('bump'); } }
-    { const ms = $('my-stack'); const meP = view.players.find(p => p.id === myId); const h = meP && meP.bet && view.phase !== 'result' ? stackHtml(meP.bet) : ''; if (ms.dataset.k !== h) { ms.innerHTML = h; ms.dataset.k = h; ms.classList.remove('bump'); void ms.offsetWidth; ms.classList.add('bump'); } }
+    { const pile = $('pot-pile'); const h = stackHtml(view.phase === 'result' && !hideMoney ? 0 : shownPot, false); if (pile.dataset.k !== h) { pile.innerHTML = h; pile.dataset.k = h; pile.classList.remove('bump'); void pile.offsetWidth; pile.classList.add('bump'); } }
+    { const ms = $('my-stack'); const h = me && me.bet && view.phase !== 'result' ? stackHtml(me.bet) : ''; if (ms.dataset.k !== h) { ms.innerHTML = h; ms.dataset.k = h; ms.classList.remove('bump'); void ms.offsetWidth; ms.classList.add('bump'); } }
 
     /* 상대 자리 */
     const others = view.players.filter(p => p.id !== myId);
@@ -526,60 +502,50 @@
       if (!p.connected) status = '오프라인';
       else if (p.away && !p.inHand) { status = '자리 비움'; scls = 'away'; }
       else if (view.handNo && !p.inHand) status = p.chips === 0 ? '돈 없음' : '대기';
-      else if (p.folded) { status = '다이'; scls = 'die'; }
-      else if (res && p.hand) status = sdGate(p) && !sd.hand[p.id] ? '…' : p.hand;
-      else if (view.phase === 'choosing') { status = p.chosen ? '선택 완료' : '고르는 중…'; scls = p.chosen ? '' : 'hot'; }
+      else if (p.folded) { status = '폴드'; scls = 'die'; }
+      else if (res && p.handDesc) status = sdGate(p) && !sd.hand[p.id] ? '…' : p.handDesc;
       else if (p.allin) { status = '올인'; scls = 'hot'; }
       else if (p.isTurn) { status = '생각 중…'; scls = 'hot'; }
-      if (view.spectating && p.inHand && p.hand && !res && !p.folded) { status = `<b class="spec-hand">${esc(p.hand)}</b>${status ? ' · ' + status : ''}`; }   // 관전자에게는 족보도 보여준다
+      if (view.spectating && p.inHand && p.handDesc && !res && !p.folded) status = `<b class="spec-hand">${esc(p.handDesc)}</b>${status ? ' · ' + status : ''}`;
       const net = res && p.inHand && !hideMoney ? p.payout - p.contrib : 0;
       const usedIds = res && res.used ? res.used[p.id] : null;
       return `<div class="${cls.join(' ')}" data-id="${p.id}">
         ${p.isDealer ? '<div class="dealer">D</div>' : ''}
+        ${p.isSB && p.inHand ? '<div class="blind sb">SB</div>' : p.isBB && p.inHand ? '<div class="blind bb">BB</div>' : ''}
         ${res && p.inHand && net ? `<div class="seat-bet payout-badge ${net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</div>` : ''}
         ${p.bet && !res ? `<div class="stack">${stackHtml(p.bet)}</div>` : ''}
         ${bubbleHtml(p.id)}
         <img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt="">
         <div class="seat-name">${esc(p.name)}${p.bot ? '<span class="bot-tag">🤖</span>' : ''}</div>
         <div class="seat-chips">💰 ${fmt(shownChips(p))}${p.rebuys ? `<span class="rebuy-tag">충전 ${p.rebuys}회</span>` : ''}</div>
-        <div class="seat-cards">${p.inHand ? cardsHtml(p, '', usedIds, seatIdx) : ''}</div>
+        <div class="seat-cards">${p.inHand && !(p.folded && !p.cards) ? cardsHtml(p, '', usedIds, seatIdx) : ''}</div>
         <div class="seat-status ${scls}">${status}</div>
-        ${p.folded && p.inHand && !res ? '<div class="stamp">DIE</div>' : ''}
+        ${p.folded && p.inHand && !res ? '<div class="stamp">FOLD</div>' : ''}
         ${p.isTurn && localDeadline ? '<div class="timer"></div>' : ''}
       </div>`;
     }).join('');
 
-    /* 공유 카드 (홀덤) */
-    const board = $('board');
-    if (view.boardMax) {
-      const usedIds = me && me.best ? me.best : [];
-      const shown = view.board.filter(c => c != null).length;
-      let s = view.board.map((c, i) => c == null ? backHtml('mid', 'hidden-board') : cardHtml(c, 'mid', (shown > (board.dataset.shown | 0) ? 'flip ' : '') + (usedIds.includes(c) ? 'used' : ''))).join('');
-      for (let i = view.board.length; i < view.boardMax; i++) s += '<div class="slot"></div>';
-      s += `<div class="board-label">${view.board.length && view.board[0] == null ? '공유 카드 · 베팅 후 공개' : view.board.length ? '공유 카드' : ''}</div>`;
-      board.innerHTML = s; board.dataset.n = view.board.length; board.dataset.shown = shown;
-    } else { board.innerHTML = ''; board.dataset.n = 0; }
+    /* 공유 카드 */
+    renderBoard(me);
 
     /* 가운데 메시지 */
     const cm = $('center-msg');
     cm.classList.remove('me');
     if (view.phase === 'betting') {
-      if (view.turn === myId) { cm.textContent = '내 차례'; cm.classList.add('me'); }
+      if (view.turn === myId) { cm.textContent = me && view.curBet > me.bet ? `내 차례 · 콜 ${won(view.curBet - me.bet)}` : '내 차례'; cm.classList.add('me'); }
       else { const t = view.players.find(p => p.id === view.turn); cm.textContent = t ? `${t.name}의 차례` : ''; }
-    } else if (view.phase === 'choosing') {
-      cm.textContent = view.needChoose ? (view.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '상대에게 공개할 1장을 고르세요 (족보는 3장 중 최선 2장)') : '다른 사람이 고르는 중…';
-      if (view.needChoose) cm.classList.add('me');
     } else if (view.phase === 'result' && res) {
-      cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : res.redeal ? `재경기 — 판돈 ${won(view.pot)} 이월` : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
+      cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
     } else cm.textContent = '';
-    $('timer-bar').classList.toggle('on', !!localDeadline && (view.phase === 'betting' || view.phase === 'choosing'));
+    $('timer-bar').classList.toggle('on', !!localDeadline && view.phase === 'betting');
 
     /* 나 */
     const meBox = $('me');
     meBox.classList.toggle('folded', !!(me && me.folded));
     meBox.classList.toggle('myturn', view.phase === 'betting' && view.turn === myId);
     if (view.phase === 'betting' && view.turn === myId && turnChanged) { meBox.classList.remove('turn-in'); void meBox.offsetWidth; meBox.classList.add('turn-in'); }
-    $('me-name').innerHTML = `<img class="${avatarCls(me ? me.avatar : myChar)}" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${me && me.isDealer ? ' <span class="muted">딜러</span>' : ''}${view.spectating ? ' <span class="muted">(관전 중)</span>' : !me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
+    const roleTag = me && me.inHand ? (me.isDealer ? ' <span class="muted">딜러</span>' : '') + (me.isSB ? ' <span class="muted">SB</span>' : me.isBB ? ' <span class="muted">BB</span>' : '') : '';
+    $('me-name').innerHTML = `<img class="${avatarCls(me ? me.avatar : myChar)}" src="${avatarSrc(me ? me.avatar : myChar)}" alt=""> ${esc(me ? me.name : myName)}${roleTag}${view.spectating ? ' <span class="muted">(관전 중)</span>' : !me || !me.inHand ? ' <span class="muted">(대기)</span>' : ''}`;
     const oldB = meBox.querySelector('.bubble'); if (oldB) oldB.remove();
     if (me) meBox.insertAdjacentHTML('afterbegin', bubbleHtml(me.id));
     Bgm.setTense(view.phase === 'betting' && view.turn === myId);
@@ -590,14 +556,20 @@
     /* 행동 버튼 */
     const ab = $('actions');
     if (view.phase === 'betting' && view.actions.length) {
-      ab.innerHTML = view.actions.map(a => {
-        const cls = a.type === 'die' ? 'die' : a.type === 'call' ? 'call' : a.type === 'allin' ? 'allin' : (a.type === 'check' ? '' : 'raise');
-        const sub = a.type === 'check' || a.type === 'die' ? '' : `<small>${won(a.amount)}${a.type !== 'allin' && me && a.amount >= me.chips ? ' 올인' : ''}</small>`;
-        return `<button class="btn ${cls}" data-type="${a.type}">${a.label}${sub}</button>`;
-      }).join('');
+      const A = {}; view.actions.forEach(a => A[a.type] = a);
+      const rz = A.raise || A.bet;
+      const callIsAllin = A.call && me && A.call.amount >= me.chips;
+      let s = `<button class="btn fold" data-type="fold">폴드</button>`;
+      if (A.check) s += `<button class="btn" data-type="check">체크</button>`;
+      else if (A.call) s += `<button class="btn call" data-type="call">콜<small>${won(A.call.amount)}${callIsAllin ? ' 올인' : ''}</small></button>`;
+      if (rz) s += `<button class="btn raise" data-type="${rz.type}">${rz.label}<small>${won(rz.min)}부터</small></button>`;
+      if (A.allin) s += `<button class="btn allin" data-type="allin">올인<small>${won(A.allin.amount)}</small></button>`;
+      ab.innerHTML = s;
       ab.querySelectorAll('button').forEach(b => b.onclick = () => {
-        if (b.dataset.type === 'allin' && !confirm(`남은 ${won(me ? me.chips : 0)} 전부 올인할까요?`)) return;
-        ab.querySelectorAll('button').forEach(x => x.disabled = true); doAction(b.dataset.type);
+        const t = b.dataset.type;
+        if (t === 'raise' || t === 'bet') { openRaise(rz); return; }
+        if (t === 'allin' && !confirm(`남은 ${won(me ? me.chips : 0)} 전부 올인할까요?`)) return;
+        ab.querySelectorAll('button').forEach(x => x.disabled = true); closeRaise(); doAction(t);
       });
       if (armedTurnAt !== view.turnAt) {
         armedTurnAt = view.turnAt; const at = view.turnAt;
@@ -605,55 +577,82 @@
         const arm = () => { if (!view || view.turnAt !== at) return; const left = dealEndsAt - Date.now(); if (left > 0) { setTimeout(arm, left); return; } ab.querySelectorAll('button').forEach(b => b.classList.remove('arming')); };
         setTimeout(arm, 520);
       }
-    } else if (view.phase === 'choosing') {
-      if (view.needChoose) {
-        const need = view.mode === '3' ? 1 : 2;
-        const ok = selected.length === need;
-        ab.innerHTML = view.mode === '3'
-          ? `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 장을 공개<small>${ok ? '족보는 3장 중 최선 2장' : '공개할 1장을 고르세요'}</small></button><button class="btn" id="btn-choose-best">덜 중요한 장 자동 공개</button>`
-          : `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 2장으로 확정${ok ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
-        $('btn-choose').onclick = () => { if (selected.length === need) doChoose(selected.slice()); };
-        $('btn-choose-best').onclick = () => { const pool = view.pool || me.cards; const b = R.bestPair(pool); doChoose(view.mode === '3' ? [pool.findIndex(c => !b.cards.includes(c))] : b.cards.map(c => pool.indexOf(c))); };
-      } else ab.innerHTML = `<div class="wait">${me && me.chosen ? '선택 완료 — 다른 사람을 기다리는 중' : me && me.folded ? '다이 — 이번 판은 구경' : view.spectating ? '👀 관전 중 — 모든 패가 보여요' : '다른 사람이 고르는 중'}</div>`;
+      if (raiseOpen && raiseOpen.turnAt !== view.turnAt) closeRaise();
     } else if (view.phase === 'betting') {
+      closeRaise();
       const t = view.players.find(p => p.id === view.turn);
-      ab.innerHTML = `<div class="wait">${me && me.folded ? '다이 — 이번 판은 구경' : view.spectating ? '👀 관전 중 — 모든 패가 보여요 · 다음 판부터 참가' : me && !me.inHand ? '다음 판부터 참가해요' : t ? `${esc(t.name)} 차례를 기다리는 중` : '…'}</div>`;
+      ab.innerHTML = `<div class="wait">${me && me.folded ? '폴드 — 이번 판은 구경' : view.spectating ? '👀 관전 중 — 모든 패가 보여요 · 다음 판부터 참가' : me && !me.inHand ? '다음 판부터 참가해요' : me && me.allin ? '올인 — 결과를 기다리는 중' : t ? `${esc(t.name)} 차례를 기다리는 중` : '…'}</div>`;
     } else if (sd && sd.handNo === view.handNo && !sd.done) {
+      closeRaise();
       ab.innerHTML = `<div class="wait">쇼다운 중… ${sd.cur ? esc(sd.cur) + ' 공개' : ''}</div><button class="btn" id="btn-skip-sd">건너뛰기 ▶</button>`;
       $('btn-skip-sd').onclick = () => { if (sd && sd.skip) sd.skip(); };
     } else {
+      closeRaise();
       let s = '';
       if (me && me.canRebuy) s += `<button class="btn raise" id="btn-rebuy">다시 참가<small>${won(view.settings.startChips)}</small></button>`;
-      const iPick = view.picker && view.picker === myId;
-      if (iPick) s += `<div class="pick-title">😵 이번 판 진 사람 — 다음 게임을 고르세요</div><div class="seg mini" id="pick-seg"><button data-mode="2">2장 섯다</button><button data-mode="3">3장 섯다</button><button data-mode="holdem">홀덤 섯다</button></div>`;
-      else if (view.picker) s += `<div class="pick-title">${esc(view.pickerName)}(진 사람)이 다음 게임을 고르는 중 · 현재 ${view.nextModeLabel}</div>`;
       const iStart = view.starter ? view.starter === myId : isHost;
-      if (iStart) s += `<button class="btn call" id="btn-next">다음 판 시작<small>${view.nextModeLabel}${view.starter ? ' · 진 사람이 시작' : ''}</small></button>`;
-      else s += `<div class="wait">${view.starter ? `${esc(view.starterName)}(진 사람)이 다음 판(${view.nextModeLabel})을 시작하면 이어져요` : `방장이 다음 판(${view.nextModeLabel})을 시작하면 이어져요`}</div>`;
-      if (isHost) {
-        s += `<button class="btn" id="btn-settings">설정</button>`;
-        if (!iStart) s += `<button class="btn ghost small" id="btn-next-force">대신 시작</button>`;
-        if (!view.picker) s += `<div class="seg mini" id="mode-seg"><button data-mode="2">2장</button><button data-mode="3">3장</button><button data-mode="holdem">홀덤</button></div>`;
-      }
+      if (iStart) s += `<button class="btn call" id="btn-next">다음 판 시작<small>${view.starter ? '진 사람이 시작 · ' : ''}블라인드 ${fmt(view.sb)}/${fmt(view.settings.bb)}</small></button>`;
+      else s += `<div class="wait">${view.starter ? `${esc(view.starterName)}(진 사람)이` : '방장이'} 다음 판을 시작하면 이어져요</div>`;
+      if (isHost) { s += `<button class="btn" id="btn-settings">설정</button>`; if (!iStart) s += `<button class="btn ghost small" id="btn-next-force">대신 시작</button>`; }
       ab.innerHTML = s;
       if ($('btn-next')) $('btn-next').onclick = doStart;
       if ($('btn-next-force')) $('btn-next-force').onclick = () => { if (confirm(`${view.starterName}(진 사람) 대신 시작할까요?`)) doStart(); };
       if ($('btn-settings')) $('btn-settings').onclick = () => { inSettings = true; render(); };
       if ($('btn-rebuy')) $('btn-rebuy').onclick = doRebuy;
-      if ($('mode-seg')) $('mode-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); b.onclick = () => doSettings({ mode: b.dataset.mode }); });
-      if ($('pick-seg')) $('pick-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); b.onclick = () => { doPick(b.dataset.mode); Snd.pop(); }; });
     }
 
     renderQuick(me);
     animateDeals();
-    /* 결과 패널 · 재참가 안내 */
     if (view.phase === 'result' && res) renderResult(me);
     if (me && me.canRebuy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rb-yes').textContent = `${won(view.settings.startChips)}으로 다시 참가`; $('rb-desc').textContent = `${won(view.settings.startChips)}으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.`; $('rebuy').classList.remove('hidden'); }
     else if (!(me && me.canRebuy)) $('rebuy').classList.add('hidden');
     tick();
   }
 
-  /* ── 내 카드: 쪼기 + 3장 선택 + 사용 카드 강조 ── */
+  /* 보드: 5칸, 새로 열리는 카드는 순서대로 뒤집힌다 (런아웃이면 스트리트 간격을 둔다) */
+  function renderBoard(me) {
+    const board = $('board');
+    if (!view.handNo) { board.innerHTML = ''; board.dataset.n = 0; return; }
+    const usedIds = (view.phase === 'result' && me && me.best) ? me.best : [];
+    const prevN = +board.dataset.n || 0;
+    const n = view.board.length;
+    const streetsAtOnce = n > prevN ? (prevN < 3 ? 1 + Math.max(0, n - 3) : n - prevN) : 0;
+    let s = view.board.map((c, i) => {
+      const isNew = i >= prevN;
+      let delay = 0;
+      if (isNew) { const street = i < 3 ? 0 : i - 2; const firstNewStreet = prevN < 3 ? 0 : prevN - 2; delay = (street - firstNewStreet) * (streetsAtOnce > 1 ? 1100 : 0) + (i < 3 ? i * 160 : 0); }
+      return cardHtml(c, 'mid', (isNew ? 'flip ' : '') + (usedIds.includes(c) ? 'used' : usedIds.length ? 'dim' : '')).replace('<div class="card', isNew ? `<div style="animation-delay:${delay}ms;opacity:0;animation-fill-mode:both" class="card` : '<div class="card');
+    }).join('');
+    for (let i = n; i < 5; i++) s += '<div class="slot"></div>';
+    s += `<div class="board-label">${n === 0 ? '프리플롭' : n === 3 ? 'FLOP' : n === 4 ? 'TURN' : 'RIVER'}</div>`;
+    if (board.dataset.k !== s) { board.innerHTML = s; board.dataset.k = s; }
+    board.dataset.n = n;
+  }
+
+  /* ── 레이즈 패널 ── */
+  let raiseOpen = null;
+  function openRaise(a) {
+    raiseOpen = { a, turnAt: view.turnAt, to: a.min };
+    const panel = $('raise-panel'); panel.classList.remove('hidden');
+    $('rp-title').textContent = a.type === 'bet' ? '벳' : '레이즈';
+    const range = $('rp-range'); range.min = a.min; range.max = a.max; range.step = a.step || 10; range.value = a.min;
+    const presets = a.presets.filter((p, i, arr) => arr.findIndex(x => x.to === p.to) === i);
+    $('rp-presets').innerHTML = presets.map(p => `<button data-to="${p.to}">${p.label}<br><small>${fmt(p.to)}</small></button>`).join('') + `<button data-to="${a.max}">올인<br><small>${fmt(a.max)}</small></button>`;
+    const paint = () => {
+      const to = raiseOpen.to; $('rp-amt').textContent = fmt(to);
+      range.value = to; range.style.setProperty('--p', ((to - a.min) / Math.max(1, a.max - a.min) * 100) + '%');
+      $('rp-presets').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.to === to));
+      $('rp-ok').innerHTML = to >= a.max ? `올인 ${won(a.max)}` : `${a.type === 'bet' ? '벳' : '레이즈'} ${won(to)}`;
+    };
+    range.oninput = () => { let v = Math.round(+range.value / 10) * 10; if (v >= a.max - 5) v = a.max; raiseOpen.to = Math.max(a.min, Math.min(a.max, v)); paint(); };
+    $('rp-presets').querySelectorAll('button').forEach(b => b.onclick = () => { raiseOpen.to = +b.dataset.to; paint(); Snd.chip(); });
+    $('rp-ok').onclick = () => { const to = raiseOpen.to; if (to >= a.max && !confirm(`남은 돈 전부 올인할까요?`)) return; closeRaise(); $('actions').querySelectorAll('button').forEach(x => x.disabled = true); doAction(to >= a.max ? 'allin' : a.type, to); };
+    $('rp-cancel').onclick = closeRaise;
+    paint();
+  }
+  function closeRaise() { raiseOpen = null; $('raise-panel').classList.add('hidden'); }
+
+  /* ── 내 카드: 쪼기 + 사용 카드 강조 ── */
   function renderMyCards(me) {
     const box = $('me-cards');
     const mh = $('me-hand');
@@ -664,55 +663,35 @@
       return;
     }
     const usedIds = me.best || [];
-    const canPick = view.phase === 'choosing' && view.needChoose;
-    const pool = (view.pool && view.pool.length > me.cards.length) ? view.pool : me.cards;   // 홀덤: 공유 카드가 풀에 들어온다
-    for (let i = me.cards.length; i < pool.length; i++) revealed.add(pool[i]);               // 공유 카드는 이미 공개된 카드
     const allRevealed = me.cards.every(c => revealed.has(c));
-    const key = [pool.join(','), pool.map(c => revealed.has(c) ? 1 : 0).join(''), selected.join(','), canPick ? 1 : 0, allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase, me.open ?? ''].join('|');
-    /* 다 열었는데 좋은 패면 효과음 (판마다 한 번) */
-    if (allRevealed && pool.length >= 2 && !me.folded && goodKey !== `${view.handNo}:${pool.join(',')}`) {
-      goodKey = `${view.handNo}:${pool.join(',')}`;
-      const h = me.best && me.best.length === 2 ? R.evalHand(me.best) : R.bestPair(pool).hand;
-      if (h.tier === '광땡') { Snd.great(); mh.classList.add('glow'); confetti(30); try { navigator.vibrate && navigator.vibrate([80, 40, 120]); } catch (e) { } }
-      else if (h.tier === '땡' || h.tier === '특수' || h.special) { Snd.good(); mh.classList.add('glow'); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
-      reaction(h);
+    const key = [me.cards.join(','), me.cards.map(c => revealed.has(c) ? 1 : 0).join(''), allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase, view.board.length].join('|');
+    /* 다 열었을 때 / 보드가 열릴 때 내 패 리액션 (판·스트리트마다 한 번) */
+    if (allRevealed && !me.folded && goodKey !== `${view.handNo}:${view.board.length}`) {
+      goodKey = `${view.handNo}:${view.board.length}`;
+      reaction(me);
     }
-    if (key !== meCardsKey && peekActive) peekPending = true;   // 쪼는 중엔 카드 DOM을 갈아끼우지 않는다
+    if (key !== meCardsKey && peekActive) peekPending = true;
     else if (key !== meCardsKey) {
       meCardsKey = key;
       const prevCount = box.querySelectorAll('.card').length;
-      box.innerHTML = pool.map((c, i) => {
+      box.innerHTML = me.cards.map((c, i) => {
         const isRev = revealed.has(c);
-        const shared = i >= me.cards.length;
-        const used = allRevealed && usedIds.includes(c) && (view.phase === 'result' || me.chosen);
-        const dim = allRevealed && view.phase === 'result' && pool.length > 2 && usedIds.length && !usedIds.includes(c);
-        const sel = canPick && selected.includes(i);
-        const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : '', sel ? 'sel' : '', canPick ? 'pick' : '', shared ? 'shared' : '', (view.mode === '3' && me.open != null && c === me.open) ? 'opened' + (usedIds.includes(c) ? '' : ' dim') : ''].join(' ');
+        const used = allRevealed && usedIds.includes(c) && view.phase === 'result';
+        const dim = allRevealed && view.phase === 'result' && usedIds.length && !usedIds.includes(c);
+        const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : ''].join(' ');
         const inner = isRev ? '' : `<div class="cover">${CARDS.BACK}</div><div class="hint">${PEEK_HINT[peekMode]}</div>`;
-        const openedMine = view.mode === '3' && me.open != null && c === me.open;
-        const badge = (sel ? `<div class="badge">${view.mode === '3' ? '공개' : selected.indexOf(i) + 1}</div>` : '') + (shared ? '<div class="tag">공유</div>' : '') + (openedMine ? '<div class="tag open">공개</div>' : '');
-        return cardHtml(c, cls, '').replace('</div></div>', `</div>${inner}${badge}</div>`);
+        return cardHtml(c, cls, '').replace('</div></div>', `</div>${inner}</div>`);
       }).join('');
       box.querySelectorAll('.card.peek').forEach(el => bindPeek(el));
-      if (canPick) box.querySelectorAll('.card.pick').forEach((el, i) => el.onclick = () => {
-        const lim = view.mode === '3' ? 1 : 2;
-        if (selected.includes(i)) selected = selected.filter(x => x !== i);
-        else { selected.push(i); if (selected.length > lim) selected.shift(); }
-        renderTable();
-      });
     }
-    /* 족보 표시: 다 열기 전엔 숨김 */
     mh.className = 'me-hand';
-    if (me.folded) mh.textContent = '다이';
+    if (me.folded) mh.textContent = '폴드';
     else if (!allRevealed) { mh.classList.add('hidden-hand'); mh.textContent = revealed.size ? '더 열어보세요…' : '카드를 쪼아보세요'; }
     else {
-      let name = me.hand || '';
-      if (me.best && me.best.length === 2) { const h = R.evalHand(me.best); if (h.special) { name = `${h.name} · ${h.special}`; mh.classList.add('special'); } }
-      if (view.phase === 'choosing' && !me.chosen && selected.length === 2) { const h = R.evalHand([pool[selected[0]], pool[selected[1]]]); name = `선택: ${h.name}${h.special ? ' · ' + h.special : ''}`; }
-      if (view.phase === 'choosing' && !me.chosen && view.mode === '3' && selected.length === 1) { const b = R.bestPair(pool); const inBest = b.cards.includes(pool[selected[0]]); name = `내 족보: ${b.hand.name}${b.hand.special ? ' · ' + b.hand.special : ''} (${R.describeOne(pool[selected[0]])} 공개${inBest ? ' — 족보 카드예요!' : ''})`; }
-      mh.textContent = name;
+      const desc = me.handDesc || '';
+      if (view.board.length >= 3 && me.best) { const h = R.evalBest(me.cards.concat(view.board)); if (h.cat >= 4) mh.classList.add('special'); mh.innerHTML = `${esc(desc)}<span class="sub">${view.board.length < 5 ? '지금까지' : '최종'}</span>`; }
+      else mh.textContent = desc;
     }
-    /* 쪼기 방식 선택 */
     const pm = $('peek-modes');
     const hiddenLeft = me.cards.some(c => !revealed.has(c));
     pm.innerHTML = Object.entries(PEEK_LABEL).map(([k, l]) => `<button data-peek="${k}" class="${k === peekMode ? 'on' : ''}">${l}</button>`).join('') + (hiddenLeft ? '<button class="all" id="btn-reveal-all">한번에 보기</button>' : '');
@@ -763,7 +742,6 @@
         const t0 = performance.now(); slowT0 = t0;
         const step = (t) => {
           if (!active) return;
-          /* 경과 시간 기준(프레임이 밀려도 진행) + 약간의 흔들림 */
           apply((t - t0) / 2600 + (Math.random() - 0.5) * 0.02);
           if ((t - t0) >= 2600) { active = false; el.classList.remove('tremble'); apply(1); finishReveal(el, false); return; }
           raf = requestAnimationFrame(step);
@@ -783,7 +761,7 @@
     el.addEventListener('lostpointercapture', () => { if (el.isConnected) end(); });
   }
 
-  /* ── 이펙트: 뷰 변화를 비교해서 연출 ── */
+  /* ── 이펙트 ── */
   function seatEl(id) { return id === myId ? $('me') : document.querySelector(`.seat[data-id="${id}"]`); }
   function stackEl(id) { if (id === myId) return $('my-stack'); const s = document.querySelector(`.seat[data-id="${id}"] .stack`); return s || seatEl(id); }
   function flyChip(fromEl, toEl, amount, big) {
@@ -796,14 +774,12 @@
     const dx = (b.left + b.width / 2) - (a.left + a.width / 2), dy = (b.top + b.height / 2) - (a.top + a.height / 2);
     el.animate([{ transform: 'translate(-50%,-50%) scale(1)' }, { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.8)`, opacity: 0.9 }], { duration: 520, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => el.remove();
   }
-  /* 덱(판돈 자리)에서 각 자리로 카드가 날아간다 */
   let shuffledHand = 0, dealEndsAt = 0;
   function animateDeals() {
     const targets = [...document.querySelectorAll('#screen-table .card.deal:not([data-flown])')];
     if (!targets.length) return;
     const fx = $('fx'); const fr = fx.getBoundingClientRect(); const src = $('deck').getBoundingClientRect();
     const sx = src.left + src.width / 2 - fr.left, sy = src.top + src.height / 2 - fr.top;
-    /* 순서: 딜러 다음 사람부터 자리 순으로, 한 장씩 돌아가며(라운드 로빈). 공유 카드는 맨 뒤 */
     const inHand = view.players.filter(p => p.inHand).sort((a, b) => a.seat - b.seat);
     const dSeat = (view.players.find(p => p.isDealer) || {}).seat ?? -1;
     const order = inHand.filter(p => p.seat > dSeat).concat(inHand.filter(p => p.seat <= dSeat)).map(p => p.id);
@@ -811,15 +787,14 @@
       const seat = el.closest('.seat'); const pid = seat ? seat.dataset.id : (el.closest('#me-cards') ? myId : null);
       const idx = [...el.parentElement.children].filter(c => c.classList.contains('card')).indexOf(el);
       return { el, pid, idx, rank: pid ? order.indexOf(pid) : 99 };
-    }).sort((a, b) => (a.pid ? 0 : 1) - (b.pid ? 0 : 1) || a.idx - b.idx || a.rank - b.rank);
-    /* 판의 첫 딜이면 먼저 덱을 섞는다 */
+    }).sort((a, b) => a.idx - b.idx || a.rank - b.rank);
     let base = 0;
     if (shuffledHand !== view.handNo) {
       shuffledHand = view.handNo; base = 1000;
       const deck = $('deck'); deck.classList.remove('shuffling'); void deck.offsetWidth; deck.classList.add('shuffling'); Snd.shuffle();
       setTimeout(() => deck.classList.remove('shuffling'), 950);
     }
-    const per = 190;
+    const per = 170;
     dealEndsAt = Date.now() + base + items.length * per + 400;
     items.forEach((it, i) => {
       const el = it.el;
@@ -838,33 +813,39 @@
       setTimeout(() => Snd.slide(), delay);
       const land = () => { fly.remove(); if (el.style.visibility === 'hidden') { el.style.visibility = ''; el.classList.add('landed'); } };
       anim.onfinish = land;
-      setTimeout(land, delay + 380 + 250);   // 애니메이션 이벤트가 안 와도(백그라운드 탭 등) 카드는 반드시 보이게
+      setTimeout(land, delay + 380 + 250);
     });
   }
   function actPop(pid, type, text) {
     const host = seatEl(pid); if (!host) return;
     host.querySelectorAll('.act-pop').forEach(e => e.remove());
-    const el = document.createElement('div'); el.className = 'act-pop ' + (type === 'die' ? 'die' : type === 'allin' ? 'allin' : type === 'hand' ? 'hand' : (type === 'check' || type === 'call') ? '' : 'raise'); el.textContent = text;
+    const el = document.createElement('div'); el.className = 'act-pop ' + (type === 'fold' ? 'die' : type === 'allin' ? 'allin' : type === 'hand' ? 'hand' : (type === 'check' || type === 'call') ? '' : 'raise'); el.textContent = text;
     host.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
-  /* 내 패 리액션: 화면에 크게 (나에게만 보인다) */
   function reactionText(text, cls) {
     const el = $('reaction'); el.className = 'reaction ' + (cls || ''); el.textContent = text; el.classList.remove('hidden'); void el.offsetWidth;
     clearTimeout(reactionText.t); reactionText.t = setTimeout(() => el.classList.add('hidden'), 2500);
   }
-  function reaction(h) {
-    if (h.tier === '광땡') reactionText('대박!!! ' + h.name, 'great');
-    else if (h.tier === '땡') reactionText(h.score >= 908 ? '어이구 좋다~ ' + h.name : '어이구 좋다~', '');
-    else if (h.special === '땡잡이' || h.special === '암행어사') reactionText('오~ ' + h.special + '!', 'ok');
-    else if (h.tier === '특수') reactionText('오~ 괜찮은데?', 'ok');
-    else if (h.score >= 707) reactionText('먹을 만하네', 'ok');
-    else if (h.score <= 702) reactionText(h.score === 700 ? '…망통이다' : '…망했다', 'bad');
-    else reactionText('음… 애매하네', 'bad');
+  /* 내 패 리액션: 프리플롭은 2장 강도, 보드가 열리면 족보 */
+  function reaction(me) {
+    if (view.board.length < 3) {
+      const s = R.holeStrength(me.cards); const [a, b] = me.cards.map(c => R.cardById(c));
+      if (a.r === b.r && a.r >= 10) { reactionText('어이구 좋다~ ' + me.handDesc, ''); Snd.good(); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
+      else if (s >= 0.7) { reactionText('오~ 괜찮은데? ' + me.handDesc, 'ok'); Snd.pop(); }
+      else if (s <= 0.28) reactionText('음… 애매하네', 'bad');
+      return;
+    }
+    const h = R.evalBest(me.cards.concat(view.board));
+    const usesHole = h.cards.some(c => me.cards.includes(c));
+    if (h.cat >= 6) { reactionText('대박!!! ' + h.name, 'great'); Snd.great(); confetti(30); try { navigator.vibrate && navigator.vibrate([80, 40, 120]); } catch (e) { } }
+    else if (h.cat >= 4) { reactionText('어이구 좋다~ ' + h.name, ''); Snd.good(); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
+    else if (h.cat >= 2 && usesHole) { reactionText('오~ ' + h.desc, 'ok'); Snd.pop(); }
+    else if (h.cat === 1 && usesHole && h.tb[0] >= 11) reactionText('먹을 만하네', 'ok');
+    else if (view.board.length === 5 && h.cat === 0) reactionText('…망했다', 'bad');
   }
-  /* 승리 연출: 승리! + 딴 돈 카운트업 + 동전 비 + 연승 */
   function celebrate(net, big, handName) {
     const el = $('winfx'); el.className = 'winfx';
-    el.innerHTML = `<div class="w-title">${big ? '대박 승리!' : '승리!'}</div><div class="w-amount">+0원</div><div class="w-sub">${esc(handName || '모두 다이')}</div>${streak >= 2 ? `<div class="w-streak">🔥 ${streak}연승!</div>` : ''}`;
+    el.innerHTML = `<div class="w-title">${big ? '대박 승리!' : '승리!'}</div><div class="w-amount">+0원</div><div class="w-sub">${esc(handName || '모두 폴드')}</div>${streak >= 2 ? `<div class="w-streak">🔥 ${streak}연승!</div>` : ''}`;
     void el.offsetWidth;
     const amt = el.querySelector('.w-amount'); const t0 = performance.now(); const dur = 1200;
     const step = t => { const k = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - k, 3); amt.textContent = '+' + fmt(Math.round(net * e)) + '원'; if (k < 1) requestAnimationFrame(step); };
@@ -885,7 +866,7 @@
     clearTimeout(banner.t); banner.t = setTimeout(() => b.classList.add('hidden'), 1800);
   }
   function confetti(n) {
-    const fx = $('fx'); const colors = ['#e8c256', '#ff6b5e', '#4fc98a', '#7c6cf0', '#fff'];
+    const fx = $('fx'); const colors = ['#ffd54f', '#ff6b5e', '#4fc98a', '#7c6cf0', '#fff'];
     for (let i = 0; i < n; i++) {
       const c = document.createElement('div'); c.className = 'confetti';
       c.style.left = Math.random() * 100 + '%'; c.style.background = colors[i % colors.length];
@@ -893,9 +874,9 @@
       fx.appendChild(c); setTimeout(() => c.remove(), 3500);
     }
   }
+  const STREET_BANNER = { 1: '플롭!', 2: '턴!', 3: '리버!' };
   function effects(prev, v, me) {
     const pm = {}; prev.players.forEach(p => pm[p.id] = p);
-    /* 베팅: 기여액 증가 → 칩이 판돈으로 날아간다 */
     let anyBet = false;
     for (const p of v.players) {
       const q = pm[p.id]; if (!q) continue;
@@ -903,43 +884,35 @@
         anyBet = true;
         setTimeout(() => flyChip(seatEl(p.id), stackEl(p.id), p.contrib - q.contrib), 0);
         if (p.chips === 0 && q.chips > 0 && !p.folded) { banner('올인!', 'red small', p.name); Snd.big(); say(p.id, 'allin'); $('screen-table').querySelector('.felt').classList.add('shake'); setTimeout(() => $('screen-table').querySelector('.felt').classList.remove('shake'), 600); }
-        else if (Math.random() < 0.6) say(p.id, p.bet > q.bet && p.bet > v.curBet - 1 && p.contrib - q.contrib > 100 ? 'bet' : 'call');
+        else if (Math.random() < 0.6) say(p.id, p.bet > q.bet && p.bet >= v.curBet && p.contrib - q.contrib > v.settings.bb ? 'bet' : 'call');
       }
       if (p.folded && !q.folded) { Snd.die(); say(p.id, 'die'); }
     }
     if (anyBet) { Snd.chip(); $('pot-box').classList.remove('bump'); void $('pot-box').offsetWidth; $('pot-box').classList.add('bump'); }
-    /* 행동 팝업 */
     if (v.lastAction && v.lastAction.n !== (prev.lastAction ? prev.lastAction.n : 0)) {
-      const a = v.lastAction; const label = E.ACTION_LABEL[a.type] || a.type;
-      setTimeout(() => actPop(a.id, a.type, label + (a.amount && a.type !== 'die' && a.type !== 'check' ? ` ${fmt(a.amount)}` : (a.type === 'die' ? '' : '!'))), 0);
-      if (a.type !== 'die' && a.type !== 'check') Snd.pop();
+      const a = v.lastAction; const label = a.label || E.ACTION_LABEL[a.type] || a.type;
+      setTimeout(() => actPop(a.id, a.type, label + (a.to && a.type !== 'fold' && a.type !== 'check' ? ` ${fmt(a.to)}` : (a.type === 'fold' ? '' : '!'))), 0);
+      if (a.type !== 'fold' && a.type !== 'check') Snd.pop();
     }
-    /* 단계 전환 배너 */
+    /* 스트리트 전환: 각자 앞의 칩이 팟으로, 보드 배너 (런아웃이면 순서대로) */
     if ((v.street !== prev.street || v.phase !== prev.phase) && prev.phase === 'betting') {
       for (const q of prev.players) if (q.bet > 0) setTimeout(() => flyChip(seatEl(q.id), $('pot-pile'), q.bet), 60);
     }
-    if (v.street !== prev.street && v.phase !== 'result') {
-      const holdemReveal = v.mode === 'holdem' && prev.board[0] == null && v.board[0] != null;
-      if (holdemReveal) { banner('공유 카드 공개!', 'gold small'); Snd.reveal(); }
-      else if (v.mode === '2' && v.street === 2) banner('두 번째 장', 'small');
-      else if (v.mode === '3' && v.street === 2) banner('세 번째 장', 'small');
+    if (v.street > prev.street) {
+      const first = prev.street + 1;
+      for (let s = first; s <= v.street; s++) setTimeout(() => { banner(STREET_BANNER[s], 'gold small', s === 1 ? '공유 카드 3장' : ''); s === 1 ? Snd.flop() : Snd.reveal(); }, (s - first) * 1100);
+      if (v.street - prev.street > 1) setTimeout(() => banner('올인 — 보드를 끝까지!', 'red small'), 100);
     }
-    if (v.phase === 'choosing' && prev.phase !== 'choosing') banner(v.needChoose ? (v.mode === '3' ? '공개할 1장을 고르세요' : '2장을 고르세요') : '패 선택 중', 'small');
-    if (v.picked && !prev.picked && v.settings.mode !== prev.settings.mode) { const who = v.players.find(p => p.id === v.picked); banner(`다음 판은 ${v.nextModeLabel}`, 'gold small', who ? `${who.name}의 선택` : ''); Snd.pop(); }
-    /* 내 차례 */
     if (v.phase === 'betting' && v.turn === myId && (prev.turn !== myId || prev.phase !== 'betting')) Snd.turn();
-    if (v.phase === 'choosing' && prev.phase !== 'choosing' && v.needChoose) Snd.turn();
-    /* 결과 */
     if (v.phase === 'result' && prev.phase !== 'result' && v.result) {
       const r = v.result;
-      const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
       for (const id of r.winners) say(id, 'win');
-      const showdown = !r.byFold && !r.redeal;
+      const showdown = !r.byFold;
       if (showdown) { banner('쇼다운!', 'red small'); Snd.whoosh(); startShowdown(r, v, me); }
       else setTimeout(() => announce(r, v, me), 200);
     }
   }
-  /* 쇼다운 순차 공개: 진 사람부터 한 장씩, 마지막 승자는 두구두구 뒤에 */
+  /* 쇼다운 순차 공개: 진 사람부터, 마지막 승자는 두구두구 뒤에 */
   function startShowdown(r, v, me) {
     sd = { handNo: v.handNo, open: {}, hand: {}, done: false, timers: [], startedAt: Date.now(), cur: '' };
     const players = v.players.filter(p => r.revealed.includes(p.id));
@@ -947,51 +920,44 @@
     const at = (ms, fn) => sd.timers.push(setTimeout(() => { if (sd && !sd.done && view && view.handNo === sd.handNo) fn(); }, ms));
     const felt = $('screen-table').querySelector('.felt');
     const stage = $('sdstage');
-    let leader = null;   // { name, score }
+    let leader = null;
     let t = 450;
     at(t, () => felt.classList.add('dim'));
     order.forEach((p, pi) => {
       const last = pi === order.length - 1, isWin = r.winners.includes(p.id);
-      const hand = r.hands[p.id]; const used = (r.used && r.used[p.id]) || p.cards || [];
-      const big = hand && (hand.tier === '광땡' || hand.tier === '땡');
-      /* 무대 등장 */
+      const hand = r.hands[p.id]; const hole = p.cards || [];
+      const big = hand && hand.cat >= 4;
       t += 200;
       at(t, () => {
         sd.cur = p.name; renderTable();
         stage.className = 'sdstage' + (last ? ' winner' : '');
         $('ss-avatar').src = avatarSrc(p.avatar); $('ss-avatar').className = avatarCls(p.avatar);
         $('ss-name').textContent = p.name; $('ss-sub').textContent = last ? '마지막 패…' : `${pi + 1}번째 공개`;
-        $('ss-cards').innerHTML = used.map(c => `<div class="ss-card ${last ? 'slow' : ''}"><div class="face">${CARDS.face(R.cardById(c))}</div><div class="cover">${CARDS.BACK}</div></div>`).join('');
+        $('ss-cards').innerHTML = hole.map(c => `<div class="ss-card ${last ? 'slow' : ''}"><div class="face">${CARDS.face(R.cardById(c))}</div><div class="cover">${CARDS.BACK}</div></div>`).join('');
         const hh = $('ss-hand'); hh.className = 'ss-hand'; hh.textContent = '';
         const ld = $('ss-lead'); ld.className = 'ss-lead'; ld.innerHTML = leader ? `현재 1등: <b>${esc(leader.name)}</b> ${esc(leader.hand)}` : '';
         stage.classList.remove('hidden'); Snd.whoosh();
       });
-      /* 카드 한 장씩 쪼듯이 */
-      used.forEach((c, i) => {
-        const finalCard = last && i === used.length - 1;
-        if (finalCard) {   // 승자 마지막 장: 심장박동 + 상승음
-          t += 250;
-          at(t, () => { stage.classList.add('thump'); $('ss-sub').textContent = '두구두구…'; Snd.riser(); Snd.drum(); });
-          t += 1100;
-        } else t += 250;
+      hole.forEach((c, i) => {
+        const finalCard = last && i === hole.length - 1;
+        if (finalCard) { t += 250; at(t, () => { stage.classList.add('thump'); $('ss-sub').textContent = '두구두구…'; Snd.riser(); Snd.drum(); }); t += 1100; }
+        else t += 250;
         const peelMs = finalCard ? 1000 : 650;
         at(t, () => { const el = $('ss-cards').children[i]; if (!el) return; el.style.setProperty('--peel', peelMs + 'ms'); el.querySelector('.cover').classList.add('peel'); Snd.peek(); stage.classList.remove('thump'); });
         t += peelMs;
         at(t, () => { const el = $('ss-cards').children[i]; if (!el) return; const cv = el.querySelector('.cover'); if (cv) cv.remove(); el.classList.add('hit'); Snd.snap(); });
         t += 150;
       });
-      /* 족보 도장 + 역전 */
       t += 150;
       at(t, () => {
-        const hh = $('ss-hand'); hh.textContent = hand ? hand.name + (hand.special && r.catcher === hand.special ? '!' : '') : ''; hh.className = 'ss-hand show' + (big ? ' great' : hand && hand.score <= 703 ? ' bad' : '');
+        const hh = $('ss-hand'); hh.textContent = hand ? hand.desc : ''; hh.className = 'ss-hand show' + (big ? ' great' : hand && hand.cat === 0 ? ' bad' : '');
         big ? Snd.good() : Snd.pop();
         if (big) felt.classList.add('shake');
         const ld = $('ss-lead');
-        if (isWin) { ld.className = 'ss-lead flip'; ld.textContent = r.catcher && r.winners.includes(p.id) ? `${r.catcher}! 잡았다!` : leader ? '역전!! 1등' : '1등'; Snd.win(); }
-        else if (!leader || (hand && hand.score > leader.score)) { ld.className = 'ss-lead' + (leader ? ' flip' : ''); ld.textContent = leader ? '역전! 현재 1등' : '현재 1등'; if (leader) Snd.pop(); leader = { name: p.name, score: hand ? hand.score : 0, hand: hand ? hand.name : '' }; }
+        if (isWin) { ld.className = 'ss-lead flip'; ld.textContent = r.winners.length > 1 ? '공동 1등 — 팟 분배' : leader ? '역전!! 1등' : '1등'; Snd.win(); }
+        else if (!leader || (hand && hand.score > leader.score)) { ld.className = 'ss-lead' + (leader ? ' flip' : ''); ld.textContent = leader ? '역전! 현재 1등' : '현재 1등'; if (leader) Snd.pop(); leader = { name: p.name, score: hand ? hand.score : 0, hand: hand ? hand.desc : '' }; }
         else { ld.className = 'ss-lead'; ld.innerHTML = `1등은 여전히 <b>${esc(leader.name)}</b> ${esc(leader.hand)}`; }
         setTimeout(() => felt.classList.remove('shake'), 600);
-        /* 자리에도 반영 */
         sd.open[p.id] = 9; sd.hand[p.id] = true; renderTable(); actPop(p.id, 'hand', hand ? hand.name : '');
       });
       t += last ? 1100 : 750;
@@ -1016,33 +982,24 @@
     const hn = view.handNo;
     setTimeout(() => { if (view && view.phase === 'result' && view.handNo === hn) $('result').classList.remove('hidden'); }, ms);
   }
-  /* 승자 발표 + 연출 */
   function announce(r, v, me) {
     const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
-    {
-      {
-        if (r.redeal) { banner(r.tied ? '무승부!' : '재경기!', 'gold small', r.tied ? `${r.tied.map(id => v.players.find(p => p.id === id)?.name).join(' vs ')} — 판돈 묻고 다시` : `${r.reason} — 판돈 이월`); Snd.deal(); showResultPanel(1500); return; }
-        const top = r.winners.length ? r.hands[r.winners[0]] : null;
-        const bigHand = top && (top.tier === '광땡' || top.tier === '땡');
-        if (r.byFold) banner(`${names} 승리`, 'small', '모두 다이');
-        else if (r.catcher) { banner(`${r.catcher}!`, 'red', `${names} 승리`); $('screen-table').querySelector('.felt').classList.add('shake'); }
-        else if (bigHand) { banner(`${top.name}!`, 'gold', `${names} 승리`); $('screen-table').querySelector('.felt').classList.add('shake'); if (top.tier === '광땡') confetti(60); }
-        else banner(`${top ? top.name : ''}`, 'small', `${names} 승리`);
-        setTimeout(() => $('screen-table').querySelector('.felt').classList.remove('shake'), 600);
-        const meWon = r.winners.includes(myId);
-        const myNet = me && me.inHand ? (r.payouts[myId] || 0) - me.contrib : 0;
-        if (meWon) { streak++; bigHand ? Snd.big() : Snd.win(); }
-        else if (me && me.inHand) { streak = 0; Snd.lose(); if (myNet <= -1000) { $('vignette').classList.remove('red'); void $('vignette').offsetWidth; $('vignette').classList.add('red'); reactionText(myNet <= -5000 ? '아… 크게 잃었다' : '아깝다…', 'bad'); } }
-        /* 판돈 → 승자, 그리고 승자 화면엔 성취 연출 */
-        const pot = $('pot-box');
-        for (const id of r.winners) setTimeout(() => flyChip(pot, seatEl(id), r.payouts[id] || 0, true), 300);
-        if (meWon) setTimeout(() => celebrate(myNet, bigHand, top ? top.name : ''), 500);
-        showResultPanel(r.byFold ? 1500 : (meWon ? 2800 : 1600));
-      }
-    }
+    const top = r.winners.length ? r.hands[r.winners[0]] : null;
+    const bigHand = top && top.cat >= 4;
+    if (r.byFold) banner(`${names} 승리`, 'small', '모두 폴드');
+    else if (bigHand) { banner(`${top.name}!`, 'gold', `${names} 승리`); $('screen-table').querySelector('.felt').classList.add('shake'); if (top.cat >= 6) confetti(60); }
+    else banner(`${top ? top.desc : ''}`, 'small', `${names} 승리${r.winners.length > 1 ? ' — 팟 분배' : ''}`);
+    setTimeout(() => $('screen-table').querySelector('.felt').classList.remove('shake'), 600);
+    const meWon = r.winners.includes(myId);
+    const myNet = me && me.inHand ? (r.payouts[myId] || 0) - me.contrib : 0;
+    if (meWon) { streak++; bigHand ? Snd.big() : Snd.win(); }
+    else if (me && me.inHand) { streak = 0; Snd.lose(); if (myNet <= -1000) { $('vignette').classList.remove('red'); void $('vignette').offsetWidth; $('vignette').classList.add('red'); reactionText(myNet <= -5000 ? '아… 크게 잃었다' : '아깝다…', 'bad'); } }
+    const pot = $('pot-box');
+    for (const id of r.winners) setTimeout(() => flyChip(pot, seatEl(id), r.payouts[id] || 0, true), 300);
+    if (meWon && myNet > 0) setTimeout(() => celebrate(myNet, bigHand, top ? top.desc : ''), 500);
+    showResultPanel(r.byFold ? 1500 : (meWon ? 2800 : 1600));
   }
 
-  /* 퀵 채팅 · 자리 비움 · +15초 · 전적 */
   function renderQuick(me) {
     const q = $('quick');
     const away = !!(me && me.away);
@@ -1067,37 +1024,31 @@
     $('stats-body').innerHTML = `<div class="st-row head"><span></span><span>이름</span><span class="r">판</span><span class="r">승</span><span class="r">충전</span><span class="r">순손익</span><span class="r">최고</span></div>` +
       rows.map(p => { const s = p.stats || {}; const net = s.net || 0; return `<div class="st-row"><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span class="nm">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}${s.maxStreak >= 2 ? ` <span class="muted">🔥${s.maxStreak}</span>` : ''}</span><span class="r">${s.hands || 0}</span><span class="r">${s.wins || 0}</span><span class="rb">${p.rebuys ? p.rebuys + '회' : '-'}</span><span class="${net >= 0 ? 'pos' : 'neg'}">${net > 0 ? '+' : ''}${fmt(net)}</span><span class="best">${s.best ? esc(s.best.name) : '-'}</span></div>`; }).join('');
     const hist = (view.history || []).slice().reverse();
-    $('stats-hist').innerHTML = hist.length ? hist.map(h => `<div class="hist-row"><span>${h.no}판</span><b>${esc(h.winners.join(', '))}</b><span class="hh">${esc(h.catcher ? h.catcher + '!' : h.hand)}</span><span>판돈 ${fmt(h.pot)}</span></div>`).join('') : '<div class="hist-row">아직 없음</div>';
+    $('stats-hist').innerHTML = hist.length ? hist.map(h => `<div class="hist-row"><span>${h.no}판</span><b>${esc(h.winners.join(', '))}</b><span class="hh">${esc(h.hand)}</span><span>팟 ${fmt(h.pot)}</span></div>`).join('') : '<div class="hist-row">아직 없음</div>';
     $('stats').classList.remove('hidden');
   }
   function renderResult(me) {
     const res = view.result; const box = $('result');
     const nameOf = id => view.players.find(p => p.id === id)?.name || '?';
-    const title = $('result-title'); title.className = 'result-title';
-    if (res.redeal) { title.textContent = res.tied ? `무승부! ${res.tied.map(nameOf).join(' vs ')} — 판돈 묻고 다시` : `${nameOf(res.by)}의 ${res.reason} — 재경기!`; title.classList.add('redeal'); }
-    else if (res.byFold) { title.textContent = `${nameOf(res.winners[0])} 승리 — 모두 다이`; title.classList.add('win'); }
-    else {
-      const w = res.winners.map(id => `${nameOf(id)} (${res.hands[id].name})`).join(', ');
-      title.textContent = res.catcher ? `${res.catcher}! ${w} 승리` : `${w} 승리`;
-      title.classList.add('win');
-    }
+    const title = $('result-title'); title.className = 'result-title win';
+    if (res.byFold) title.textContent = `${nameOf(res.winners[0])} 승리 — 모두 폴드`;
+    else title.textContent = `${res.winners.map(id => `${nameOf(id)} (${res.hands[id].desc})`).join(', ')} 승리${res.winners.length > 1 ? ' — 팟 분배' : ''}`;
     const rows = view.players.filter(p => p.inHand).map(p => {
       const net = p.payout - p.contrib;
       const shown = p.cards && res.revealed.includes(p.id);
       const used = res.used && res.used[p.id] ? res.used[p.id] : [];
       return `<div class="rrow ${res.winners.includes(p.id) ? 'win' : ''}">
-        <div class="rcards">${shown ? p.cards.map(c => cardHtml(c, '', (used.includes(c) ? 'used' : (used.length && p.cards.length > 2 ? 'dim' : '')))).join('') : p.folded ? '' : backHtml() + backHtml()}</div>
+        <div class="rcards">${shown ? p.cards.map(c => cardHtml(c, '', used.includes(c) ? 'used' : used.length ? 'dim' : '')).join('') : p.folded ? '' : backHtml() + backHtml()}</div>
         <span class="rn">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}</span>
-        <span class="rh">${p.folded ? '<span class="muted">다이</span>' : shown ? (res.hands[p.id]?.name || '') : ''}</span>
-        <span class="rp ${net < 0 ? 'neg' : ''}">${res.redeal ? '' : (net > 0 ? '+' : '') + fmt(net)}</span></div>`;
+        <span class="rh">${p.folded ? '<span class="muted">폴드</span>' : shown ? (res.hands[p.id]?.desc || '') : ''}</span>
+        <span class="rp ${net < 0 ? 'neg' : ''}">${(net > 0 ? '+' : '') + fmt(net)}</span></div>`;
     }).join('');
-    $('result-body').innerHTML = rows + (res.redeal ? `<div class="result-note">판돈 ${won(view.pot)}이 다음 판으로 이월됩니다</div>` : '');
+    const boardRow = view.board.length ? `<div class="result-note">보드: ${view.board.map(c => R.cardById(c).name).join(' ')}</div>` : '';
+    $('result-body').innerHTML = boardRow + rows;
     let acts = '';
-    if (view.picker && view.picker === myId) acts += `<div class="pick-title">😵 진 사람은 다음 게임을 고를 수 있어요 — 결과창을 닫고 골라주세요</div>`;
-    else if (view.picker) acts += `<div class="result-note">${esc(view.pickerName)}(진 사람)이 다음 게임을 고릅니다</div>`;
     const iStart = view.starter ? view.starter === myId : role === 'host';
-    if (iStart) acts += `<button class="btn primary" id="res-next">다음 판 시작 (${view.nextModeLabel})${view.starter ? ' — 진 사람이 시작' : ''}</button>`;
-    else acts += `<div class="result-note">${view.starter ? `${esc(view.starterName)}(진 사람)이` : '방장이'} 다음 판(${view.nextModeLabel})을 시작하면 이어져요</div>`;
+    if (iStart) acts += `<button class="btn primary" id="res-next">다음 판 시작${view.starter ? ' — 진 사람이 시작' : ''}</button>`;
+    else acts += `<div class="result-note">${view.starter ? `${esc(view.starterName)}(진 사람)이` : '방장이'} 다음 판을 시작하면 이어져요</div>`;
     if (me && me.canRebuy) acts += `<button class="btn" id="res-rebuy">${won(view.settings.startChips)}으로 다시 참가</button>`;
     acts += `<button class="btn ghost" id="res-close">닫고 테이블 보기</button>`;
     $('result-actions').innerHTML = acts;
@@ -1107,21 +1058,20 @@
     resultHand = view.handNo;
   }
 
-  /* 타이머 표시 (250ms) */
   function tick() {
-    if (!view || !localDeadline || !(view.phase === 'betting' || view.phase === 'choosing')) return;
+    if (!view || !localDeadline || view.phase !== 'betting') return;
     const leftMs = Math.max(0, localDeadline - Date.now());
     const left = Math.ceil(leftMs / 1000);
     const el = document.querySelector('.seat.turn .timer');
     if (el) { el.textContent = `${left}s`; el.classList.toggle('low', left <= 5); }
     const fill = $('timer-fill');
     fill.style.width = (deadlineTotal ? leftMs / deadlineTotal * 100 : 0) + '%'; fill.classList.toggle('low', left <= 5);
-    if (view.phase === 'betting' && view.turn === myId) {
-      $('center-msg').textContent = `내 차례 · ${left}초`;
+    if (view.turn === myId) {
+      const me = view.players.find(p => p.id === myId);
+      $('center-msg').textContent = `내 차례 · ${left}초${me && view.curBet > me.bet ? ` · 콜 ${won(view.curBet - me.bet)}` : ''}`;
       $('me').classList.toggle('urgent', left <= 5 && left > 0);
       if (left <= 5 && left !== lastTickSec) { lastTickSec = left; Snd.tick(); }
     } else { $('me').classList.remove('urgent'); lastTickSec = -1; }
-    if (view.phase === 'choosing' && view.needChoose) $('center-msg').textContent = `3장 중 2장을 고르세요 · ${left}초`;
   }
   setInterval(tick, 250);
 
@@ -1142,7 +1092,7 @@
     if (host) { const h = host; try { h.broadcast({ t: 'bye' }); } catch (e) { } setTimeout(() => h.close(), 200); }
     if (client) client.close();
     host = null; client = null; game = null; view = null; role = null; inSettings = false; chatLines = []; lastCardKey = {}; resultHand = 0; meCardsKey = ''; revealed = new Set(); revealedHand = 0;
-    ['result', 'drawer', 'invite', 'rebuy', 'stats'].forEach(id => $(id).classList.add('hidden'));
+    ['result', 'drawer', 'invite', 'rebuy', 'stats', 'raise-panel'].forEach(id => $(id).classList.add('hidden'));
     lastSnap = null; migrating = false; clearTimeout(takeoverTimer); $('quick').dataset.k = ''; $('quick').innerHTML = ''; $('chatfeed').innerHTML = ''; unread = 0; $('unread').classList.add('hidden');
     $('home-err').textContent = err || '';
     show('screen-home');
@@ -1150,8 +1100,8 @@
     history.replaceState(null, '', location.pathname + (ps.toString() ? '?' + ps : ''));
   }
   function leave() {
-    if (role === 'host' && view && view.players.length > 1 && !confirm('방장이 나가면 방이 닫혀요. 나갈까요?')) return;
-    if (role === 'client' && view && (view.phase === 'betting' || view.phase === 'choosing') && !confirm('판 진행 중이에요. 나가면 다이 처리돼요.')) return;
+    if (role === 'host' && view && view.players.length > 1 && !confirm('방장이 나가면 다음 사람이 방을 이어받아요. 나갈까요?')) return;
+    if (role === 'client' && view && view.phase === 'betting' && !confirm('판 진행 중이에요. 나가면 폴드 처리돼요.')) return;
     goHome('');
   }
   window.addEventListener('beforeunload', e => { if (role === 'host' && view && view.players.length > 1) { e.preventDefault(); e.returnValue = ''; } });
@@ -1164,13 +1114,11 @@
   function getName() { const n = nameIn.value.trim().slice(0, 10) || '익명'; localStorage.setItem(LS.name, n); return n; }
   function requireLib() { if (typeof Peer === 'undefined') { $('home-err').textContent = '연결 라이브러리를 불러오지 못했어요. 새로고침 해주세요.'; return false; } return true; }
 
-  /* 인앱 브라우저 안내 (카카오톡 등에서 링크를 열면 연결이 막히는 경우가 많다) */
   const inApp = N.inAppBrowser();
   if (inApp) {
     $('inapp').classList.remove('hidden');
     $('inapp').innerHTML = `<b>${esc(inApp)} 안의 브라우저</b>로 열려 있어요. 여기서는 연결이 안 될 수 있어요.<br>${N.isIOS() ? '오른쪽 아래(또는 위) <b>⋯ / 공유</b> 버튼 → <b>Safari로 열기</b>' : '오른쪽 위 <b>⋮</b> → <b>다른 브라우저로 열기(Chrome)</b>'} 를 눌러 다시 열어 주세요.`;
   }
-  /* 연결 진단 */
   $('btn-diag').onclick = async () => {
     const box = $('diag'); box.classList.remove('hidden');
     const row = (label, v) => `<div>${label}: ${v}</div>`;
@@ -1192,7 +1140,7 @@
     else if (d.signaling !== 'ok') advice = '연결 서버에 못 닿았어요. 와이파이/데이터를 바꿔 보거나, 잠시 후 다시 시도해 주세요.';
     else if (!d.srflx && !d.relay) advice = '외부로 나가는 경로가 없어요(회사망·공용 와이파이 방화벽). 다른 네트워크(휴대폰 데이터)로 시도해 주세요.';
     else if (!d.srflx && d.relay) advice = '직접 연결은 막혀 있지만 중계로는 가능해요. 참가 시 8초쯤 뒤 중계로 자동 전환됩니다.';
-    else advice = '이 기기는 연결 조건이 정상이에요. 그래도 안 되면 방장 쪽 기기에서도 진단을 해보세요 (방장 브라우저가 닫히면 방이 사라져요).';
+    else advice = '이 기기는 연결 조건이 정상이에요. 그래도 안 되면 방장 쪽 기기에서도 진단을 해보세요.';
     box.innerHTML += `<div style="margin-top:8px;color:var(--ink)">→ ${advice}</div>`;
   };
   function renderCharPick() {
@@ -1234,20 +1182,16 @@
   $('btn-drawer-close').onclick = () => $('drawer').classList.add('hidden');
   $('chat-form').onsubmit = e => { e.preventDefault(); doChat($('chat-in').value); $('chat-in').value = ''; };
   const bgmBtn = $('btn-bgm');
-  const paintBgm = () => { bgmBtn.textContent = bgmOn ? '🎵' : '🎵'; bgmBtn.style.opacity = bgmOn ? '1' : '0.35'; };
+  const paintBgm = () => { bgmBtn.style.opacity = bgmOn ? '1' : '0.35'; };
   paintBgm();
   bgmBtn.onclick = () => { bgmOn = !bgmOn; localStorage.setItem(LS.bgm, bgmOn ? '1' : '0'); paintBgm(); if (bgmOn) Bgm.start(); else Bgm.stop(); toast(bgmOn ? '배경음악 켜짐' : '배경음악 꺼짐', 1000); };
   const muteBtn = $('btn-mute');
   muteBtn.textContent = muted ? '🔇' : '🔊';
   muteBtn.onclick = () => { muted = !muted; localStorage.setItem(LS.mute, muted ? '1' : '0'); muteBtn.textContent = muted ? '🔇' : '🔊'; };
 
-  /* 탭이 백그라운드에 있다 돌아오면(타이머가 밀림) 쇼다운 연출은 바로 마무리 */
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && sd && !sd.done && sd.skip && Date.now() - sd.startedAt > 20000) sd.skip(); });
-  /* 게임 중 화면 꺼짐 방지 (방장 화면이 꺼지면 판이 멈춘다) */
   async function keepAwake() { try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) { } }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && view) keepAwake(); });
-
-  /* 테이블 화면은 스크롤 컨테이너가 아니다: 포커스·scrollIntoView 등으로 몰래 밀리면 되돌린다 */
   { const st = $('screen-table'); st.addEventListener('scroll', () => { if (st.scrollLeft || st.scrollTop) { st.scrollLeft = 0; st.scrollTop = 0; } }); }
 
   if (params.get('room')) nameIn.focus();

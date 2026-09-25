@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#0b0908">
+<meta name="theme-color" content="#06090f">
 <link rel="icon" href="data:,">
-<title>섯다 온라인 — 친구와 방 코드로 바로</title>
-<link rel="stylesheet" href="seotda.css?v=20260925-9">
+<title>홀덤 온라인 — 친구와 방 코드로 바로</title>
+<link rel="stylesheet" href="../seotda/seotda.css?v=20260925-9">
+<link rel="stylesheet" href="holdem.css?v=20260925-9">
 </head>
 <body>
 
@@ -14,8 +15,8 @@
 <section id="screen-home" class="screen active">
   <div class="bg-room"></div>
   <div class="home-wrap">
-    <h1 class="logo">섯다<span class="logo-en">ONLINE</span></h1>
-    <p class="tagline">서버도, 계정도 없다. 방 코드 하나로 친구 6명까지.<br>2장 · 3장 · 홀덤 섯다 — 판돈 100원, 시작금은 방장이 정한다.</p>
+    <h1 class="logo">홀덤<span class="logo-en">ONLINE</span></h1>
+    <p class="tagline">서버도, 계정도 없다. 방 코드 하나로 친구 8명까지.<br>텍사스 노리밋 홀덤 — 블라인드·시작금은 방장이 정한다.</p>
 
     <label class="field">
       <span>닉네임</span>
@@ -39,19 +40,16 @@
     <div class="diag hidden" id="diag"></div>
 
     <details class="rules">
-      <summary>족보 · 베팅 · 모드</summary>
+      <summary>족보 · 진행 · 베팅</summary>
       <div class="rules-body">
-        <p><b>족보 (높은 순)</b> 38광땡 › 18광땡 › 13광땡 › 장땡 › 9땡 … 1땡 › 알리(1·2) › 독사(1·4) › 구삥(1·9) › 장삥(1·10) › 장사(4·10) › 세륙(4·6) › 갑오(9끗) … 1끗 › 망통</p>
-        <p><b>특수족보</b> (설정에서 끌 수 있음) 땡잡이(3·7 어떤 조합이든)는 1~9땡을 잡는다 · 암행어사(4·7 어떤 조합이든)는 13·18광땡을 잡는다 · 49파토(4·9 어떤 조합이든)는 상대 패와 상관없이 재경기, 판돈 이월 · 같은 족보로 비기면 판돈을 묻고 비긴 사람들끼리 다시</p>
-        <p><b>모드</b> 2장 섯다: 1장 → 베팅 → 1장 → 베팅. 3장 섯다: 2장 → 베팅 → 1장 → 3장 중 1장을 골라 상대에게 공개 → 베팅 → 족보는 공개 카드 포함 3장 중 최선의 2장. 홀덤 섯다: 개인 2장 + 가운데 공유 1장(뒤집힘) → 베팅 → 공유 카드 공개 → 내 2장 + 공유 1장 중 2장 선택 → 베팅. 방장이 언제든 바꿀 수 있다(다음 판부터).</p>
-        <p><b>베팅</b> 삥(100원)·따당(현재 베팅의 2배)·쿼터(팟의 ¼)·하프(팟의 ½)·올인(남은 돈 전부)·콜·체크·다이. 돈이 모자라면 올인이 되고 자기 몫까지만 가져간다. 돈을 다 잃으면 언제든 시작금으로 다시 참가.</p>
+        <p><b>족보 (높은 순)</b> 로열 스트레이트 플러시 › 스트레이트 플러시 › 포카드 › 풀하우스 › 플러시 › 스트레이트 › 트리플 › 투페어 › 원페어 › 하이카드. 내 2장 + 공유 5장, 총 7장 중 최선의 5장.</p>
+        <p><b>진행</b> 딜러 버튼 왼쪽이 스몰 블라인드(BB의 절반), 그 다음이 빅 블라인드. 프리플롭(2장) → 플롭(공유 3장) → 턴(1장) → 리버(1장) → 쇼다운. 프리플롭은 빅 블라인드 왼쪽부터, 그 뒤로는 딜러 왼쪽부터 행동. 2명이면 딜러가 스몰 블라인드.</p>
+        <p><b>베팅 (노리밋)</b> 체크·콜·벳/레이즈(금액 지정, 최소 레이즈 = 직전 레이즈 폭)·올인·폴드. 돈이 모자라면 올인이 되고 사이드팟으로 자기 몫까지만 가져간다. 동점이면 팟을 나눈다. 모두 올인이면 보드를 끝까지 깐다. 돈을 다 잃으면 언제든 시작금으로 다시 참가.</p>
         <p><b>쪼기</b> 내 카드는 뒤집혀 오고, 위로·옆으로·모서리·뒤집기·살살 중 골라서 직접 연다.</p>
-        <p><b>다음 판</b> 판이 끝나면 <b>진 사람(가장 많이 잃은 사람)</b>이 다음 게임을 고르고 다음 판을 시작한다. 진 사람이 나갔으면 방장이 시작하고, 방장은 언제든 대신 시작할 수 있다.</p>
-        <p><b>연결</b> 같은 와이파이가 아니어도 된다. 방장이 브라우저를 닫으면 방이 사라지니 방장은 끝까지 남아 있자. 게임 중에도 방 코드로 들어올 수 있다 (다음 판부터 참가).</p>
+        <p><b>연결</b> 같은 와이파이가 아니어도 된다. 방장이 브라우저를 닫으면 자리 순서로 다음 사람이 방을 이어받는다. 게임 중에도 방 코드로 들어올 수 있다 (다음 판부터 참가, 그 전엔 관전).</p>
       </div>
     </details>
-    <a class="btn" href="../holdem/" style="text-align:center;text-decoration:none">♠ 텍사스 홀덤도 있어요 →</a>
-    <a class="back-link" href="../td/">← 회귀한 마왕 (TD)으로</a>
+    <a class="back-link" href="../seotda/">← 섯다 온라인으로</a>
     <div class="muted ver" id="ver">v20260925-9 · 화면이 옛날 같으면 새로고침(당겨서 새로고침)하세요</div>
   </div>
 </section>
@@ -85,16 +83,12 @@
 
     <div class="settings" id="settings">
       <div class="settings-title">판 설정 <span class="muted" id="settings-who"></span></div>
-      <div class="seg" id="set-mode">
-        <button data-mode="2">2장 섯다</button><button data-mode="3">3장 섯다</button><button data-mode="holdem">홀덤 섯다</button>
-      </div>
+      <label>빅 블라인드(원) <input type="number" id="set-bb" min="20" max="100000" step="10"></label>
+      <div class="muted fixed-note" id="sb-note">스몰 블라인드는 빅 블라인드의 절반</div>
       <label>시작 돈(원) <input type="number" id="set-chips" min="1000" max="10000000" step="1000"></label>
-      <div class="muted fixed-note">판돈(앤티) 100원 고정 · 돈이 0이면 언제든 시작 돈으로 재참가 · 게임 시작 전엔 모두에게, 시작 후엔 재참가·새 참가자부터 적용</div>
-      <label>레이즈 제한/라운드 <input type="number" id="set-raises" min="0" max="10"></label>
+      <div class="muted fixed-note">돈이 0이면 언제든 시작 돈으로 재참가 · 게임 시작 전엔 모두에게, 시작 후엔 재참가·새 참가자부터 적용</div>
       <label>턴 시간(초, 0=무제한) <input type="number" id="set-turn" min="0" max="180"></label>
-      <label>최대 인원 <input type="number" id="set-max" min="2" max="8"></label>
-      <label class="check"><input type="checkbox" id="set-special"> 특수족보 (땡잡이·암행어사·구사)</label>
-      <label class="check"><input type="checkbox" id="set-loser"> 진 사람이 다음 게임을 고른다</label>
+      <label>최대 인원 <input type="number" id="set-max" min="2" max="9"></label>
     </div>
 
     <button class="btn" id="btn-addbot">🤖 봇 추가 (친구가 모자랄 때)</button>
@@ -112,9 +106,7 @@
 
   <div class="topbar">
     <div class="top-left"><span class="top-code" id="top-code"></span> <span class="muted" id="top-hand"></span></div>
-    <div class="top-mid"><span class="mode-tag" id="mode-tag"></span>
-      <div class="seg mini top-seg hidden" id="top-mode"><button data-mode="2">2장</button><button data-mode="3">3장</button><button data-mode="holdem">홀덤</button></div>
-    </div>
+    <div class="top-mid"><span class="mode-tag" id="mode-tag"></span></div>
     <div class="top-right">
       <button class="icon-btn" id="btn-invite" title="초대">➕</button>
       <button class="icon-btn" id="btn-log" title="기록·채팅">💬<span class="unread hidden" id="unread"></span></button>
@@ -129,7 +121,7 @@
     <div class="center">
       <div class="chatfeed" id="chatfeed"></div>
       <div class="deck" id="deck"><div class="dk"></div><div class="dk"></div><div class="dk"></div><div class="dk"></div></div>
-      <div class="pot-row"><div class="pot-box" id="pot-box"><span class="pot-label">판돈</span><b class="pot" id="pot">0</b><span class="won">원</span></div><div class="stack pot" id="pot-pile"></div></div>
+      <div class="pot-row"><div class="pot-box" id="pot-box"><span class="pot-label">팟</span><b class="pot" id="pot">0</b><span class="won">원</span></div><div class="stack pot" id="pot-pile"></div></div>
       <div class="board" id="board"></div>
       <div class="center-msg" id="center-msg"></div>
       <div class="stack mine" id="my-stack"></div>
@@ -146,6 +138,13 @@
       <div class="me-chips">💰 <b id="me-chips">0</b>원 <span class="muted" id="me-bet"></span></div>
       <div class="peek-modes" id="peek-modes"></div>
     </div>
+  </div>
+
+  <div class="raise-panel hidden" id="raise-panel">
+    <div class="rp-head"><span id="rp-title">레이즈</span><b id="rp-amt">0</b><span class="muted">원까지</span></div>
+    <input type="range" id="rp-range" min="0" max="100" step="10">
+    <div class="rp-presets" id="rp-presets"></div>
+    <div class="rp-actions"><button class="btn" id="rp-cancel">취소</button><button class="btn call" id="rp-ok">확정</button></div>
   </div>
 
   <div class="actions" id="actions"></div>
@@ -217,11 +216,11 @@
   <div class="toast" id="toast"></div>
 </section>
 
-<script src="vendor/peerjs.min.js?v=20260925-9"></script>
+<script src="../seotda/vendor/peerjs.min.js?v=20260925-9"></script>
 <script src="rules.js?v=20260925-9"></script>
 <script src="engine.js?v=20260925-9"></script>
 <script src="cards.js?v=20260925-9"></script>
-<script src="net.js?v=20260925-9"></script>
+<script src="../seotda/net.js?v=20260925-9"></script>
 <script src="app.js?v=20260925-9"></script>
 </body>
 </html>

@@ -612,4 +612,20 @@ t('관전자는 홀덤 가운데 숨김 카드도 보인다', () => {
   assert.notEqual(g.view('p2').board[0], null);
 });
 
+console.log('다음 판 시작 권한');
+t('진 사람이 다음 판을 시작한다 · 진 사람이 나가면 방장(null)', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand();
+  g.act('p1', 'die'); g.act('p2', 'die');                   // p0 승리, 진 사람은 앤티만 낸 p1(딜러 다음 순서)
+  assert.equal(g.phase, 'result');
+  assert.equal(g.starter(), g.loser); assert(g.loser === 'p1' || g.loser === 'p2');
+  const st = g.starter();
+  assert.equal(g.startBy('p0' === st ? 'p2' : 'p0'), false);
+  assert.equal(g.phase, 'result');
+  g.player(st).connected = false;
+  assert.equal(g.starter(), null);                            // 방장이 시작
+  g.player(st).connected = true;
+  assert(g.startBy(st)); assert.equal(g.phase, 'betting'); assert.equal(g.loser, null);
+});
+
 console.log(`\n${n} tests passed`);
