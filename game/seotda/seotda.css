@@ -134,6 +134,7 @@ input:focus { border-color: var(--accent); }
 .rules-body { margin-top: 10px; color: var(--muted); line-height: 1.6; display: flex; flex-direction: column; gap: 8px; }
 .rules-body b { color: var(--ink); }
 .back-link { color: var(--muted); font-size: 12px; text-decoration: none; text-align: center; }
+.ver { text-align: center; font-size: 11px; opacity: .7; }
 
 /* ── 연결 중 ── */
 #screen-connect { justify-content: center; align-items: center; }
