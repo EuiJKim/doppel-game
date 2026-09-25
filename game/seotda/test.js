@@ -26,8 +26,11 @@ t('땡잡이 = 3·7 어떤 조합이든', () => {
   assert.equal(R.evalHand([C(3, '광'), C(7, '열')]).special, '땡잡이');
   assert.equal(R.evalHand([C(3, '광'), C(7, '띠')]).special, '땡잡이');
 });
-t('암행어사 = 4열+7열, 구사(49파토) = 4·9 어떤 조합이든', () => {
+t('암행어사 = 4·7 어떤 조합이든, 구사(49파토) = 4·9 어떤 조합이든', () => {
   assert.equal(R.evalHand([C(4, '열'), C(7, '열')]).special, '암행어사');
+  assert.equal(R.evalHand([C(4, '띠'), C(7, '띠')]).special, '암행어사');
+  assert.equal(R.evalHand([C(4, '띠'), C(7, '열')]).special, '암행어사');
+  assert.deepEqual(R.resolve([{ id: 'a', cards: [C(1, '광'), C(8, '광')] }, { id: 'b', cards: [C(4, '띠'), C(7, '띠')] }]).winners, ['b']);   // 4띠+7띠도 18광땡을 잡는다
   assert.equal(R.evalHand([C(4, '띠'), C(9, '열')]).special, '구사');
   assert.equal(R.evalHand([C(4, '열'), C(9, '열')]).special, '구사');
   assert.equal(R.evalHand([C(4, '띠'), C(9, '띠')]).special, '구사');
