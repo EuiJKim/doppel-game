@@ -1,6 +1,6 @@
 /* 섯다 — 게임 엔진 (호스트 브라우저에서 돈다. 순수 로직, Node 테스트 가능)
  * 모드 3종: 2장 섯다 · 3장 섯다(3장 중 2장 선택) · 홀덤 섯다(개인 2장 + 공유 3장, 최선 2장)
- * 판돈(앤티) 100원 고정 · 시작금 10,000원 · 돈이 0이면 언제든 10,000원으로 재참가.
+ * 판돈(앤티) 100원 고정 · 시작금은 설정(기본 10,000원, 1,000~10,000,000) · 돈이 0이면 언제든 시작금으로 재참가.
  * 베팅 용어: 삥(앤티만큼) · 따당(현재 베팅의 2배) · 쿼터(팟 1/4) · 하프(팟 1/2) · 콜 · 체크 · 다이
  */
 (function (root, factory) {
@@ -9,6 +9,7 @@
 })(typeof self !== 'undefined' ? self : this, function (R) {
 
   const ANTE = 100, START_CHIPS = 10000;
+  const clampStart = v => { v = Math.floor(+v || 0); if (!v) return START_CHIPS; return Math.min(10000000, Math.max(1000, Math.round(v / 100) * 100)); };
   const newStats = () => ({ hands: 0, wins: 0, net: 0, won: 0, best: null, streak: 0, maxStreak: 0 });
   const DEFAULTS = { mode: '2', ante: ANTE, startChips: START_CHIPS, special: true, maxRaises: 3, turnSec: 30, maxPlayers: 6, loserPicks: true };
   const ACTION_LABEL = { check: '체크', call: '콜', ping: '삥', ddadang: '따당', quarter: '쿼터', half: '하프', allin: '올인', die: '다이' };
@@ -21,7 +22,8 @@
 
   class Game {
     constructor(settings, rng) {
-      this.settings = { ...DEFAULTS, ...(settings || {}), ante: ANTE, startChips: START_CHIPS };
+      this.settings = { ...DEFAULTS, ...(settings || {}), ante: ANTE };
+      this.settings.startChips = clampStart(this.settings.startChips);
       if (!MODES[this.settings.mode]) this.settings.mode = '2';
       this.rng = rng || Math.random;
       this.players = [];          // {id,name,chips,seat,connected,rebuys}
@@ -78,7 +80,10 @@
       const onlyMode = Object.keys(patch).every(k => k === 'mode');
       if (this.inProgress() && !onlyMode) return false;
       const s = { ...this.settings, ...patch };
-      s.ante = ANTE; s.startChips = START_CHIPS;                       // 고정
+      s.ante = ANTE;                                                   // 판돈은 고정
+      s.startChips = clampStart(s.startChips);
+      /* 시작금 변경: 아직 한 판도 안 했으면 모두의 돈을 새 시작금으로 맞춘다. 게임 중이면 새로 오는 사람·재참가부터 적용 */
+      if (s.startChips !== this.settings.startChips && this.handNo === 0) for (const p of this.players) p.chips = s.startChips;
       if (!MODES[s.mode]) s.mode = this.settings.mode;
       s.maxRaises = Math.min(10, Math.max(0, Math.floor(s.maxRaises) || 0));
       s.turnSec = Math.min(180, Math.max(0, Math.floor(s.turnSec) || 0));

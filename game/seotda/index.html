@@ -15,7 +15,7 @@
   <div class="bg-room"></div>
   <div class="home-wrap">
     <h1 class="logo">섯다<span class="logo-en">ONLINE</span></h1>
-    <p class="tagline">서버도, 계정도 없다. 방 코드 하나로 친구 6명까지.<br>2장 · 3장 · 홀덤 섯다 — 판돈 100원, 시작금 10,000원.</p>
+    <p class="tagline">서버도, 계정도 없다. 방 코드 하나로 친구 6명까지.<br>2장 · 3장 · 홀덤 섯다 — 판돈 100원, 시작금은 방장이 정한다.</p>
 
     <label class="field">
       <span>닉네임</span>
@@ -44,7 +44,7 @@
         <p><b>족보 (높은 순)</b> 38광땡 › 18광땡 › 13광땡 › 장땡 › 9땡 … 1땡 › 알리(1·2) › 독사(1·4) › 구삥(1·9) › 장삥(1·10) › 장사(4·10) › 세륙(4·6) › 갑오(9끗) … 1끗 › 망통</p>
         <p><b>특수족보</b> (설정에서 끌 수 있음) 땡잡이(3·7 어떤 조합이든)는 1~9땡을 잡는다 · 암행어사(4열끗+7열끗)는 13·18광땡을 잡는다 · 49파토(4·9 어떤 조합이든)는 상대 패와 상관없이 재경기, 판돈 이월</p>
         <p><b>모드</b> 2장 섯다: 1장 → 베팅 → 1장 → 베팅. 3장 섯다: 2장 → 베팅 → 1장 → 3장 중 1장을 골라 상대에게 공개(나머지 2장이 내 패) → 베팅. 홀덤 섯다: 개인 2장 + 가운데 공유 1장(뒤집힘) → 베팅 → 공유 카드 공개 → 내 2장 + 공유 1장 중 2장 선택 → 베팅. 방장이 언제든 바꿀 수 있다(다음 판부터).</p>
-        <p><b>베팅</b> 삥(100원)·따당(현재 베팅의 2배)·쿼터(팟의 ¼)·하프(팟의 ½)·올인(남은 돈 전부)·콜·체크·다이. 돈이 모자라면 올인이 되고 자기 몫까지만 가져간다. 돈을 다 잃으면 언제든 10,000원으로 다시 참가.</p>
+        <p><b>베팅</b> 삥(100원)·따당(현재 베팅의 2배)·쿼터(팟의 ¼)·하프(팟의 ½)·올인(남은 돈 전부)·콜·체크·다이. 돈이 모자라면 올인이 되고 자기 몫까지만 가져간다. 돈을 다 잃으면 언제든 시작금으로 다시 참가.</p>
         <p><b>쪼기</b> 내 카드는 뒤집혀 오고, 위로·옆으로·모서리·뒤집기·살살 중 골라서 직접 연다.</p>
         <p><b>연결</b> 같은 와이파이가 아니어도 된다. 방장이 브라우저를 닫으면 방이 사라지니 방장은 끝까지 남아 있자. 게임 중에도 방 코드로 들어올 수 있다 (다음 판부터 참가).</p>
       </div>
@@ -85,7 +85,8 @@
       <div class="seg" id="set-mode">
         <button data-mode="2">2장 섯다</button><button data-mode="3">3장 섯다</button><button data-mode="holdem">홀덤 섯다</button>
       </div>
-      <div class="muted fixed-note">판돈(앤티) 100원 · 시작금 10,000원 · 돈이 0이면 언제든 10,000원 재참가</div>
+      <label>시작 돈(원) <input type="number" id="set-chips" min="1000" max="10000000" step="1000"></label>
+      <div class="muted fixed-note">판돈(앤티) 100원 고정 · 돈이 0이면 언제든 시작 돈으로 재참가 · 게임 시작 전엔 모두에게, 시작 후엔 재참가·새 참가자부터 적용</div>
       <label>레이즈 제한/라운드 <input type="number" id="set-raises" min="0" max="10"></label>
       <label>턴 시간(초, 0=무제한) <input type="number" id="set-turn" min="0" max="180"></label>
       <label>최대 인원 <input type="number" id="set-max" min="2" max="8"></label>
@@ -197,8 +198,8 @@
   <div class="modal hidden" id="rebuy">
     <div class="modal-box">
       <div class="rebuy-title">돈을 다 잃었어요</div>
-      <div class="muted">10,000원으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.</div>
-      <button class="btn primary" id="rb-yes">10,000원으로 다시 참가</button>
+      <div class="muted" id="rb-desc">시작 돈으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.</div>
+      <button class="btn primary" id="rb-yes">다시 참가</button>
       <button class="btn ghost" id="rb-no">잠깐 구경만</button>
     </div>
   </div>

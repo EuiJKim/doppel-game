@@ -463,13 +463,13 @@
     $('settings-who').textContent = isHost ? '' : '(방장만 변경)';
     $('set-mode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === s.mode));
     const fill = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
-    fill('set-raises', s.maxRaises); fill('set-turn', s.turnSec); fill('set-max', s.maxPlayers);
+    fill('set-raises', s.maxRaises); fill('set-turn', s.turnSec); fill('set-max', s.maxPlayers); fill('set-chips', s.startChips);
     if (document.activeElement !== $('set-special')) $('set-special').checked = !!s.special;
     if (document.activeElement !== $('set-loser')) $('set-loser').checked = s.loserPicks !== false;
     if (!settingsBound) {
       settingsBound = true;
-      const push = () => doSettings({ maxRaises: +$('set-raises').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, special: $('set-special').checked, loserPicks: $('set-loser').checked });
-      ['set-raises', 'set-turn', 'set-max', 'set-special', 'set-loser'].forEach(id => $(id).addEventListener('change', push));
+      const push = () => doSettings({ maxRaises: +$('set-raises').value, turnSec: +$('set-turn').value, maxPlayers: +$('set-max').value, special: $('set-special').checked, loserPicks: $('set-loser').checked, startChips: +$('set-chips').value });
+      ['set-raises', 'set-turn', 'set-max', 'set-special', 'set-loser', 'set-chips'].forEach(id => $(id).addEventListener('change', push));
       $('set-mode').querySelectorAll('button').forEach(b => b.onclick = () => doSettings({ mode: b.dataset.mode }));
     }
     const n = view.players.filter(p => p.connected).length;
@@ -610,7 +610,7 @@
       $('btn-skip-sd').onclick = () => { if (sd && sd.skip) sd.skip(); };
     } else {
       let s = '';
-      if (me && me.canRebuy) s += `<button class="btn raise" id="btn-rebuy">다시 참가<small>10,000원</small></button>`;
+      if (me && me.canRebuy) s += `<button class="btn raise" id="btn-rebuy">다시 참가<small>${won(view.settings.startChips)}</small></button>`;
       const iPick = view.picker && view.picker === myId;
       if (iPick) s += `<div class="pick-title">😵 이번 판 진 사람 — 다음 게임을 고르세요</div><div class="seg mini" id="pick-seg"><button data-mode="2">2장 섯다</button><button data-mode="3">3장 섯다</button><button data-mode="holdem">홀덤 섯다</button></div>`;
       else if (view.picker) s += `<div class="pick-title">${esc(view.pickerName)}(진 사람)이 다음 게임을 고르는 중 · 현재 ${view.nextModeLabel}</div>`;
@@ -630,7 +630,7 @@
     animateDeals();
     /* 결과 패널 · 재참가 안내 */
     if (view.phase === 'result' && res) renderResult(me);
-    if (me && me.canRebuy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rebuy').classList.remove('hidden'); }
+    if (me && me.canRebuy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rb-yes').textContent = `${won(view.settings.startChips)}으로 다시 참가`; $('rb-desc').textContent = `${won(view.settings.startChips)}으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.`; $('rebuy').classList.remove('hidden'); }
     else if (!(me && me.canRebuy)) $('rebuy').classList.add('hidden');
     tick();
   }
@@ -1079,7 +1079,7 @@
     else if (view.picker) acts += `<div class="result-note">${esc(view.pickerName)}(진 사람)이 다음 게임을 고릅니다</div>`;
     if (role === 'host') acts += `<button class="btn primary" id="res-next">다음 판 (${view.nextModeLabel})</button>`;
     else acts += `<div class="result-note">방장이 다음 판(${view.nextModeLabel})을 시작하면 이어져요</div>`;
-    if (me && me.canRebuy) acts += `<button class="btn" id="res-rebuy">10,000원으로 다시 참가</button>`;
+    if (me && me.canRebuy) acts += `<button class="btn" id="res-rebuy">${won(view.settings.startChips)}으로 다시 참가</button>`;
     acts += `<button class="btn ghost" id="res-close">닫고 테이블 보기</button>`;
     $('result-actions').innerHTML = acts;
     if ($('res-next')) $('res-next').onclick = doStart;
