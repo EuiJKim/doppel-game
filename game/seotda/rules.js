@@ -74,10 +74,10 @@
       h.name = n === 0 ? '망통' : n === 9 ? '갑오' : `${n}끗`;
     }
 
-    /* 특수족보 표시 (끗 값은 그대로 두고 flag만) */
-    if (has(3, '띠') && has(7, '열')) h.special = '땡잡이';
+    /* 특수족보 표시 (끗 값은 그대로 두고 flag만)
+     * 하우스 룰: 3·7은 어떤 조합이든 땡잡이, 4·9는 어떤 조합이든 49파토(무조건 재경기) */
+    if (lo === 3 && hi === 7) h.special = '땡잡이';
     else if (has(4, '열') && has(7, '열')) h.special = '암행어사';
-    else if (has(4, '열') && has(9, '열')) h.special = '멍텅구리구사';
     else if (lo === 4 && hi === 9) h.special = '구사';
     return h;
   }
@@ -105,13 +105,9 @@
     const bestIds = ids.filter(id => hands[id].score === best);
 
     if (special) {
-      /* 구사 → 재경기 (구사 본인 이외에 알리 이하만 있을 때) */
+      /* 49파토: 4·9가 들어오면 상대 패와 상관없이 재경기 (판돈 이월) */
       for (const id of (opts && opts.noRedeal ? [] : ids)) {
-        const sp = hands[id].special;
-        if (sp !== '구사' && sp !== '멍텅구리구사') continue;
-        const othersBest = Math.max(...ids.filter(x => x !== id).map(x => hands[x].score));
-        const limit = sp === '구사' ? 860 /* 알리 */ : 910 /* 장땡 */;
-        if (othersBest <= limit) return { redeal: true, reason: sp, by: id, winners: [], hands };
+        if (hands[id].special === '구사') return { redeal: true, reason: '49파토', by: id, winners: [], hands };
       }
       /* 암행어사: 13·18광땡을 잡는다 (38광땡은 못 잡음) */
       const amhaeng = ids.find(id => hands[id].special === '암행어사');

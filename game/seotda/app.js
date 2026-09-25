@@ -157,6 +157,17 @@
   const won = n => fmt(n) + '원';
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  /* ── 칩 더미: 금액 → 5000/1000/500/100 칩 기둥 ── */
+  function stackHtml(amount, label) {
+    if (!amount) return '';
+    let rest = amount; const cols = [];
+    for (const [v, cls] of [[5000, 'c5000'], [1000, 'c1000'], [500, 'c500'], [100, 'c100'], [50, 'c50'], [10, 'c10']]) {
+      let n = Math.floor(rest / v); rest -= n * v;
+      while (n > 0) { const k = Math.min(n, 6); cols.push({ cls, k }); n -= k; if (cols.length >= 5) { n = 0; rest = 0; } }
+      if (cols.length >= 5) break;
+    }
+    return cols.map(c => `<div class="col">${Array.from({ length: c.k }, (_, i) => `<div class="chip ${c.cls}" style="transform:translateY(${-i * 4}px)"></div>`).join('')}</div>`).join('') + (label === false ? '' : `<span class="amt">${fmt(amount)}</span>`);
+  }
   /* ── 카드 ── */
   function cardHtml(id, size, extra) {
     const c = R.cardById(id);
@@ -182,10 +193,14 @@
         const dim = showHl && usedIds && usedIds.length && !used && p.cards.length > 2;
         const delay = justShown && !gate ? ` style="animation-delay:${(0.2 + (delayIdx || 0) * 0.3).toFixed(2)}s;opacity:0;animation-fill-mode:both"` : '';
         s += cardHtml(p.cards[i], size, (isNew ? 'deal' : justShown ? 'flip' : '') + (used ? ' used' : '') + (dim ? ' dim' : '')).replace('<div class="card', `<div${delay} class="card`);
+      } else if (p.open != null && i === p.cardCount - 1 && !p.cards) {
+        s += cardHtml(p.open, size, 'opened ' + (lastOpen[p.id] === p.open ? '' : 'flip')).replace('</div></div>', '</div><div class="tag open">공개</div></div>');
+        lastOpen[p.id] = p.open;
       } else s += backHtml(size, isNew ? 'deal' : '');
     }
     return s;
   }
+  const lastOpen = {};
 
   /* ── 공통 명령 (호스트면 직접, 클라이언트면 전송) ── */
   function doAction(type) { if (role === 'host') game.act(myId, type); else client.send({ t: 'act', type }); }
@@ -292,7 +307,7 @@
     }
     if (game.phase === 'choosing' && h) {
       const pend = game.players.filter(p => p.bot && h.participants.includes(p.id) && !h.folded.has(p.id) && !h.chosen[p.id]);
-      if (pend.length) { botTimer = setTimeout(() => { if (game.phase !== 'choosing' || game.hand !== h) return; const p = pend[0]; const pool = game.pool(p.id); const b = R.bestPair(pool); game.choose(p.id, b.cards.map(c => pool.indexOf(c))); }, think); }
+      if (pend.length) { botTimer = setTimeout(() => { if (game.phase !== 'choosing' || game.hand !== h) return; const p = pend[0]; const pool = game.pool(p.id); const b = R.bestPair(pool); game.choose(p.id, h.mode === '3' ? [pool.findIndex(c => !b.cards.includes(c))] : b.cards.map(c => pool.indexOf(c))); }, think); }
       return;
     }
     if (!game.inProgress()) {
@@ -463,6 +478,8 @@
       topSeg.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.mode === view.settings.mode); if (!b.onclick) b.onclick = () => { doSettings({ mode: b.dataset.mode }); if (view.phase === 'betting' || view.phase === 'choosing') toast(`다음 판부터 ${E.MODES[b.dataset.mode].label}`); }; });
     } else topSeg.classList.add('hidden');
     { const pe = $('pot'); const prevPot = +pe.dataset.v || 0; tweenNum(pe, view.pot, 500); if (view.pot > prevPot && prevPot) { pe.classList.remove('tick'); void pe.offsetWidth; pe.classList.add('tick'); } }
+    { const pile = $('pot-pile'); const h = stackHtml(view.phase === 'result' && view.result && !view.result.redeal ? 0 : view.pot, false); if (pile.dataset.k !== h) { pile.innerHTML = h; pile.dataset.k = h; pile.classList.remove('bump'); void pile.offsetWidth; pile.classList.add('bump'); } }
+    { const ms = $('my-stack'); const meP = view.players.find(p => p.id === myId); const h = meP && meP.bet && view.phase !== 'result' ? stackHtml(meP.bet) : ''; if (ms.dataset.k !== h) { ms.innerHTML = h; ms.dataset.k = h; ms.classList.remove('bump'); void ms.offsetWidth; ms.classList.add('bump'); } }
 
     /* 상대 자리 */
     const others = view.players.filter(p => p.id !== myId);
@@ -491,7 +508,8 @@
       const usedIds = res && res.used ? res.used[p.id] : null;
       return `<div class="${cls.join(' ')}" data-id="${p.id}">
         ${p.isDealer ? '<div class="dealer">D</div>' : ''}
-        ${res && p.inHand && net ? `<div class="seat-bet payout-badge ${net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</div>` : p.bet ? `<div class="seat-bet">${fmt(p.bet)}</div>` : ''}
+        ${res && p.inHand && net ? `<div class="seat-bet payout-badge ${net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</div>` : ''}
+        ${p.bet && !res ? `<div class="stack">${stackHtml(p.bet)}</div>` : ''}
         ${bubbleHtml(p.id)}
         <img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt="">
         <div class="seat-name">${esc(p.name)}${p.bot ? '<span class="bot-tag">🤖</span>' : ''}</div>
@@ -521,7 +539,7 @@
       if (view.turn === myId) { cm.textContent = '내 차례'; cm.classList.add('me'); }
       else { const t = view.players.find(p => p.id === view.turn); cm.textContent = t ? `${t.name}의 차례` : ''; }
     } else if (view.phase === 'choosing') {
-      cm.textContent = view.needChoose ? (view.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 2장을 고르세요') : '다른 사람이 고르는 중…';
+      cm.textContent = view.needChoose ? (view.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '공개할 1장을 고르세요 (나머지 2장이 내 패)') : '다른 사람이 고르는 중…';
       if (view.needChoose) cm.classList.add('me');
     } else if (view.phase === 'result' && res) {
       cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : res.redeal ? `재경기 — 판돈 ${won(view.pot)} 이월` : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
@@ -561,9 +579,13 @@
       }
     } else if (view.phase === 'choosing') {
       if (view.needChoose) {
-        ab.innerHTML = `<button class="btn call" id="btn-choose" ${selected.length === 2 ? '' : 'disabled'}>이 2장으로 확정${selected.length === 2 ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
-        $('btn-choose').onclick = () => { if (selected.length === 2) doChoose(selected.slice()); };
-        $('btn-choose-best').onclick = () => { const pool = view.pool || me.cards; const b = R.bestPair(pool); doChoose(b.cards.map(c => pool.indexOf(c))); };
+        const need = view.mode === '3' ? 1 : 2;
+        const ok = selected.length === need;
+        ab.innerHTML = view.mode === '3'
+          ? `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 장을 공개<small>${ok ? '나머지 2장이 내 패' : '공개할 1장을 고르세요'}</small></button><button class="btn" id="btn-choose-best">최선으로 자동</button>`
+          : `<button class="btn call" id="btn-choose" ${ok ? '' : 'disabled'}>이 2장으로 확정${ok ? '' : `<small>${2 - selected.length}장 더 선택</small>`}</button><button class="btn" id="btn-choose-best">최선의 2장 자동</button>`;
+        $('btn-choose').onclick = () => { if (selected.length === need) doChoose(selected.slice()); };
+        $('btn-choose-best').onclick = () => { const pool = view.pool || me.cards; const b = R.bestPair(pool); doChoose(view.mode === '3' ? [pool.findIndex(c => !b.cards.includes(c))] : b.cards.map(c => pool.indexOf(c))); };
       } else ab.innerHTML = `<div class="wait">${me && me.chosen ? '선택 완료 — 다른 사람을 기다리는 중' : me && me.folded ? '다이 — 이번 판은 구경' : '다른 사람이 고르는 중'}</div>`;
     } else if (view.phase === 'betting') {
       const t = view.players.find(p => p.id === view.turn);
@@ -613,7 +635,7 @@
     const pool = (view.pool && view.pool.length > me.cards.length) ? view.pool : me.cards;   // 홀덤: 공유 카드가 풀에 들어온다
     for (let i = me.cards.length; i < pool.length; i++) revealed.add(pool[i]);               // 공유 카드는 이미 공개된 카드
     const allRevealed = me.cards.every(c => revealed.has(c));
-    const key = [pool.join(','), pool.map(c => revealed.has(c) ? 1 : 0).join(''), selected.join(','), canPick ? 1 : 0, allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase].join('|');
+    const key = [pool.join(','), pool.map(c => revealed.has(c) ? 1 : 0).join(''), selected.join(','), canPick ? 1 : 0, allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase, me.open ?? ''].join('|');
     /* 다 열었는데 좋은 패면 효과음 (판마다 한 번) */
     if (allRevealed && pool.length >= 2 && !me.folded && goodKey !== `${view.handNo}:${pool.join(',')}`) {
       goodKey = `${view.handNo}:${pool.join(',')}`;
@@ -632,15 +654,17 @@
         const used = allRevealed && usedIds.includes(c) && (view.phase === 'result' || me.chosen);
         const dim = allRevealed && view.phase === 'result' && pool.length > 2 && usedIds.length && !usedIds.includes(c);
         const sel = canPick && selected.includes(i);
-        const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : '', sel ? 'sel' : '', canPick ? 'pick' : '', shared ? 'shared' : ''].join(' ');
+        const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : '', sel ? 'sel' : '', canPick ? 'pick' : '', shared ? 'shared' : '', (view.mode === '3' && me.open != null && c === me.open) ? 'opened dim' : ''].join(' ');
         const inner = isRev ? '' : `<div class="cover">${CARDS.BACK}</div><div class="hint">${PEEK_HINT[peekMode]}</div>`;
-        const badge = (sel ? `<div class="badge">${selected.indexOf(i) + 1}</div>` : '') + (shared ? '<div class="tag">공유</div>' : '');
+        const openedMine = view.mode === '3' && me.open != null && c === me.open;
+        const badge = (sel ? `<div class="badge">${view.mode === '3' ? '공개' : selected.indexOf(i) + 1}</div>` : '') + (shared ? '<div class="tag">공유</div>' : '') + (openedMine ? '<div class="tag open">공개</div>' : '');
         return cardHtml(c, cls, '').replace('</div></div>', `</div>${inner}${badge}</div>`);
       }).join('');
       box.querySelectorAll('.card.peek').forEach(el => bindPeek(el));
       if (canPick) box.querySelectorAll('.card.pick').forEach((el, i) => el.onclick = () => {
+        const lim = view.mode === '3' ? 1 : 2;
         if (selected.includes(i)) selected = selected.filter(x => x !== i);
-        else { selected.push(i); if (selected.length > 2) selected.shift(); }
+        else { selected.push(i); if (selected.length > lim) selected.shift(); }
         renderTable();
       });
     }
@@ -652,6 +676,7 @@
       let name = me.hand || '';
       if (me.best && me.best.length === 2) { const h = R.evalHand(me.best); if (h.special) { name = `${h.name} · ${h.special}`; mh.classList.add('special'); } }
       if (view.phase === 'choosing' && !me.chosen && selected.length === 2) { const h = R.evalHand([pool[selected[0]], pool[selected[1]]]); name = `선택: ${h.name}${h.special ? ' · ' + h.special : ''}`; }
+      if (view.phase === 'choosing' && !me.chosen && view.mode === '3' && selected.length === 1) { const rest = pool.filter((c, i) => i !== selected[0]); const h = R.evalHand(rest); name = `내 패: ${h.name}${h.special ? ' · ' + h.special : ''} (${R.describeOne(pool[selected[0]])} 공개)`; }
       mh.textContent = name;
     }
     /* 쪼기 방식 선택 */
@@ -727,6 +752,7 @@
 
   /* ── 이펙트: 뷰 변화를 비교해서 연출 ── */
   function seatEl(id) { return id === myId ? $('me') : document.querySelector(`.seat[data-id="${id}"]`); }
+  function stackEl(id) { if (id === myId) return $('my-stack'); const s = document.querySelector(`.seat[data-id="${id}"] .stack`); return s || seatEl(id); }
   function flyChip(fromEl, toEl, amount, big) {
     if (!fromEl || !toEl) return;
     const fx = $('fx'); const fr = fx.getBoundingClientRect();
@@ -842,7 +868,7 @@
       const q = pm[p.id]; if (!q) continue;
       if (p.inHand && p.contrib > q.contrib && v.phase !== 'result') {
         anyBet = true;
-        setTimeout(() => flyChip(seatEl(p.id), $('pot-box'), p.contrib - q.contrib), 0);
+        setTimeout(() => flyChip(seatEl(p.id), stackEl(p.id), p.contrib - q.contrib), 0);
         if (p.chips === 0 && q.chips > 0 && !p.folded) { banner('올인!', 'red small', p.name); Snd.big(); say(p.id, 'allin'); $('screen-table').querySelector('.felt').classList.add('shake'); setTimeout(() => $('screen-table').querySelector('.felt').classList.remove('shake'), 600); }
         else if (Math.random() < 0.6) say(p.id, p.bet > q.bet && p.bet > v.curBet - 1 && p.contrib - q.contrib > 100 ? 'bet' : 'call');
       }
@@ -856,13 +882,16 @@
       if (a.type !== 'die' && a.type !== 'check') Snd.pop();
     }
     /* 단계 전환 배너 */
+    if ((v.street !== prev.street || v.phase !== prev.phase) && prev.phase === 'betting') {
+      for (const q of prev.players) if (q.bet > 0) setTimeout(() => flyChip(seatEl(q.id), $('pot-pile'), q.bet), 60);
+    }
     if (v.street !== prev.street && v.phase !== 'result') {
       const holdemReveal = v.mode === 'holdem' && prev.board[0] == null && v.board[0] != null;
       if (holdemReveal) { banner('공유 카드 공개!', 'gold small'); Snd.reveal(); }
       else if (v.mode === '2' && v.street === 2) banner('두 번째 장', 'small');
       else if (v.mode === '3' && v.street === 2) banner('세 번째 장', 'small');
     }
-    if (v.phase === 'choosing' && prev.phase !== 'choosing') banner(v.needChoose ? '2장을 고르세요' : '패 선택 중', 'small');
+    if (v.phase === 'choosing' && prev.phase !== 'choosing') banner(v.needChoose ? (v.mode === '3' ? '공개할 1장을 고르세요' : '2장을 고르세요') : '패 선택 중', 'small');
     if (v.picked && !prev.picked && v.settings.mode !== prev.settings.mode) { const who = v.players.find(p => p.id === v.picked); banner(`다음 판은 ${v.nextModeLabel}`, 'gold small', who ? `${who.name}의 선택` : ''); Snd.pop(); }
     /* 내 차례 */
     if (v.phase === 'betting' && v.turn === myId && (prev.turn !== myId || prev.phase !== 'betting')) Snd.turn();

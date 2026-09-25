@@ -211,7 +211,7 @@
         deck: R.shuffle(this.rng), cards: {}, board: [], boardHidden: 0, folded: new Set(), allin: new Set(),
         contrib: {}, pot: carry, carry, street: 0, stageIdx: -1, stageLabel: '',
         bets: {}, curBet: 0, acted: new Set(), raises: 0, turn: null, turnAt: 0,
-        chosen: {}, chooseAt: 0, result: null, actions: [], extended: new Set(),
+        chosen: {}, opened: {}, chooseAt: 0, result: null, actions: [], extended: new Set(),
       };
       for (const id of participants) { h.cards[id] = []; h.contrib[id] = 0; if (this.player(id).chips === 0) h.allin.add(id); }
       this.phase = 'betting';
@@ -276,7 +276,7 @@
           if (live.length <= 1) continue;
           this.phase = 'choosing'; h.turn = null; h.chosen = {}; h.chooseAt = Date.now();
           h.stageLabel = '2장 선택';
-          this._log(h.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 2장을 고르세요');
+          this._log(h.mode === 'holdem' ? '내 2장 + 공유 1장 중 2장을 고르세요' : '3장 중 공개할 1장을 고르세요 (나머지 2장이 패)');
           return;
         }
         if (kind === 'show') { h.turn = null; this._finish(this._live(), false); return; }
@@ -340,9 +340,18 @@
       if (!h || this.phase !== 'choosing' || !this._inLiveHand(id)) return { ok: false, error: '지금은 고를 수 없어요' };
       if (h.chosen[id]) return { ok: false, error: '이미 골랐어요' };
       const cards = this.pool(id);
-      if (!Array.isArray(idxs) || idxs.length !== 2 || idxs[0] === idxs[1] || idxs.some(i => !(i >= 0 && i < cards.length))) return { ok: false, error: '2장을 골라주세요' };
-      h.chosen[id] = [cards[idxs[0]], cards[idxs[1]]];
-      this._log(`${this.player(id).name}: 2장 선택 완료`);
+      if (!Array.isArray(idxs)) return { ok: false, error: '카드를 골라주세요' };
+      if (h.mode === '3' && idxs.length === 1) {
+        /* 3장 섯다: 공개할 1장을 고르면 나머지 2장이 내 패. 공개 카드는 모두에게 보인다 */
+        const oi = idxs[0]; if (!(oi >= 0 && oi < cards.length)) return { ok: false, error: '공개할 1장을 골라주세요' };
+        h.opened[id] = cards[oi]; h.chosen[id] = cards.filter((c, i) => i !== oi);
+        this._log(`${this.player(id).name}: ${R.describeOne(cards[oi])} 공개`);
+      } else {
+        if (idxs.length !== 2 || idxs[0] === idxs[1] || idxs.some(i => !(i >= 0 && i < cards.length))) return { ok: false, error: '2장을 골라주세요' };
+        h.chosen[id] = [cards[idxs[0]], cards[idxs[1]]];
+        if (h.mode === '3') { h.opened[id] = cards.find(c => !h.chosen[id].includes(c)); this._log(`${this.player(id).name}: ${R.describeOne(h.opened[id])} 공개`); }
+        else this._log(`${this.player(id).name}: 2장 선택 완료`);
+      }
       this._checkChooseDone();
       this._touch();
       return { ok: true };
@@ -350,7 +359,11 @@
     /* 시간 초과: 아직 안 고른 사람은 최선의 2장으로 */
     autoChoose() {
       const h = this.hand; if (!h || this.phase !== 'choosing') return;
-      for (const id of this._live()) if (!h.chosen[id]) { h.chosen[id] = R.bestPair(this.pool(id)).cards; this._log(`${this.player(id).name}: 시간 초과 → 자동 선택`); }
+      for (const id of this._live()) if (!h.chosen[id]) {
+        const pool = this.pool(id); h.chosen[id] = R.bestPair(pool).cards;
+        if (h.mode === '3') h.opened[id] = pool.find(c => !h.chosen[id].includes(c));
+        this._log(`${this.player(id).name}: 시간 초과 → 자동 선택`);
+      }
       this._checkChooseDone();
       this._touch();
     }
@@ -497,6 +510,7 @@
           bet: inHand ? h.bets[p.id] || 0 : 0, contrib: inHand ? h.contrib[p.id] : 0,
           cards: show ? cards : null, cardCount: cards.length, hand: handName, best,
           chosen: !!(inHand && h.chosen[p.id]),
+          open: inHand && h.opened && h.opened[p.id] != null ? h.opened[p.id] : null,     // 3장 섯다 공개 카드(모두에게 보임)
           isDealer: !!(h && h.dealer === p.id), isTurn: !!(h && h.turn === p.id),
           payout: isResult ? (h.result.payouts[p.id] || 0) : 0,
           canRebuy: this.canRebuy(p.id), away: !!p.away, stats: p.stats,
