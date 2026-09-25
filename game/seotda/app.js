@@ -21,9 +21,9 @@
   function say(pid, kind) {
     const p = view && view.players.find(x => x.id === pid); if (!p) return;
     const c = CHARS[p.avatar] || CHARS.dog; const list = c.q[kind] || c.q.bet;
-    bubbles[pid] = { text: list[Math.floor(Math.random() * list.length)], until: Date.now() + 2500, k: Math.random() };
+    bubbles[pid] = { text: list[Math.floor(Math.random() * list.length)], until: Date.now() + 3500, k: Math.random() };
   }
-  const bubbleHtml = pid => { const b = bubbles[pid]; return b && b.until > Date.now() ? `<div class="bubble" data-k="${b.k}">${esc(b.text)}</div>` : ''; };
+  const bubbleHtml = pid => { const b = bubbles[pid]; return b && b.until > Date.now() ? `<div class="bubble ${b.chat ? 'chat' : ''}" data-k="${b.k}">${esc(b.text)}</div>` : ''; };
   let bgmOn = localStorage.getItem(LS.bgm) !== '0';
 
   /* 토큰은 탭 단위(sessionStorage): 같은 브라우저에서 방장 탭 + 참가 탭을 열어도 다른 사람으로 잡힌다.
@@ -88,6 +88,7 @@
       great: () => { [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, 0.35, 'square', 0.05, null, i * 0.09)); [262, 330].forEach((f, i) => tone(f, 1.2, 'sawtooth', 0.04, null, 0.3 + i * 0.05)); },
       tick: () => tone(1800, 0.05, 'square', 0.05),
       riser: () => { tone(120, 1.6, 'sawtooth', 0.05, 900); tone(240, 1.6, 'triangle', 0.04, 1800); },
+      chat: () => { tone(1200, 0.07, 'sine', 0.08); tone(1600, 0.09, 'sine', 0.08, null, 0.08); },
       snap: () => { noise(0.05, 0.14, 0, 3500); tone(900, 0.06, 'square', 0.05, 300); },
       drum: () => { let d = 0; for (let i = 0; i < 14; i++) { tone(85, 0.07, 'square', 0.07, 50, d); d += 0.13 - i * 0.006; } },
       whoosh: () => tone(900, 0.12, 'triangle', 0.04, 200),
@@ -420,10 +421,22 @@
     if (me && me.cards && (v.phase === 'choosing' || v.phase === 'result')) me.cards.forEach(c => revealed.add(c));
     render();
   }
+  let unread = 0;
   function addChat(line) {
     chatLines.push(line); if (chatLines.length > 60) chatLines.shift(); renderLog();
     const p = view && view.players.find(x => x.name === line.from);
-    if (p) { bubbles[p.id] = { text: line.text, until: Date.now() + 3000, k: Math.random() }; if (view) renderTable(); }
+    if (p) { bubbles[p.id] = { text: line.text, until: Date.now() + 4500, k: Math.random(), chat: true }; if (view) renderTable(); }
+    /* 테이블 위 피드 */
+    const feed = $('chatfeed');
+    if (feed) {
+      const el = document.createElement('div'); el.className = 'cf-item';
+      el.innerHTML = `<img class="${avatarCls(p ? p.avatar : 'dog')}" src="${avatarSrc(p ? p.avatar : 'dog')}" alt=""><b>${esc(line.from)}</b><span>${esc(line.text)}</span>`;
+      feed.appendChild(el);
+      while (feed.children.length > 4) feed.firstChild.remove();
+      setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 400); }, 9000);
+    }
+    if ($('drawer').classList.contains('hidden') && line.from !== myName) { unread++; const u = $('unread'); u.textContent = unread > 9 ? '9+' : unread; u.classList.remove('hidden'); }
+    if (line.from !== myName) Snd.chat();
   }
 
   function render() {
@@ -442,7 +455,7 @@
     $('lobby-players').innerHTML = view.players.map(p => `
       <div class="lp"><span class="dot ${p.connected ? '' : 'off'}"></span><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span>${esc(p.name)}</span>
         ${p.seat === 0 ? '<span class="tag">방장</span>' : ''}${p.id === myId ? '<span class="tag">나</span>' : ''}
-        ${p.bot ? '<span class="bot-tag">🤖 봇</span>' : ''}<span class="sp"></span><span class="muted">💰 ${won(p.chips)}</span>
+        ${p.bot ? '<span class="bot-tag">🤖 봇</span>' : ''}${p.rebuys ? `<span class="rebuy-tag">충전 ${p.rebuys}회</span>` : ''}<span class="sp"></span><span class="muted">💰 ${won(p.chips)}</span>
         ${isHost && p.id !== myId ? `<button class="icon-btn kick" data-id="${p.id}" title="내보내기">✕</button>` : ''}</div>`).join('');
     if (isHost) $('lobby-players').querySelectorAll('.kick').forEach(b => b.onclick = () => { host.kick(b.dataset.id); game.removePlayer(b.dataset.id); });
     const s = view.settings;
@@ -515,7 +528,7 @@
         ${bubbleHtml(p.id)}
         <img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt="">
         <div class="seat-name">${esc(p.name)}${p.bot ? '<span class="bot-tag">🤖</span>' : ''}</div>
-        <div class="seat-chips">💰 ${fmt(p.chips)}</div>
+        <div class="seat-chips">💰 ${fmt(p.chips)}${p.rebuys ? `<span class="rebuy-tag">충전 ${p.rebuys}회</span>` : ''}</div>
         <div class="seat-cards">${p.inHand ? cardsHtml(p, '', usedIds, seatIdx) : ''}</div>
         <div class="seat-status ${scls}">${status}</div>
         ${p.folded && p.inHand && !res ? '<div class="stamp">DIE</div>' : ''}
@@ -559,7 +572,7 @@
     Bgm.setTense(view.phase === 'betting' && view.turn === myId);
     renderMyCards(me);
     tweenNum($('me-chips'), me ? me.chips : 0, 700);
-    $('me-bet').textContent = me && me.bet ? `· 이번 라운드 ${won(me.bet)}` : (me && me.inHand && me.contrib ? `· 넣은 돈 ${won(me.contrib)}` : '');
+    $('me-bet').innerHTML = (me && me.bet ? `· 이번 라운드 ${won(me.bet)}` : (me && me.inHand && me.contrib ? `· 넣은 돈 ${won(me.contrib)}` : '')) + (me && me.rebuys ? ` <span class="rebuy-tag">충전 ${me.rebuys}회</span>` : '');
 
     /* 행동 버튼 */
     const ab = $('actions');
@@ -1033,8 +1046,8 @@
   }
   function openStats() {
     const rows = view.players.slice().sort((a, b) => (b.stats?.net || 0) - (a.stats?.net || 0));
-    $('stats-body').innerHTML = `<div class="st-row head"><span></span><span>이름</span><span class="r">판</span><span class="r">승</span><span class="r">순손익</span><span class="r">최고</span></div>` +
-      rows.map(p => { const s = p.stats || {}; const net = s.net || 0; return `<div class="st-row"><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span class="nm">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}${s.maxStreak >= 2 ? ` <span class="muted">🔥${s.maxStreak}</span>` : ''}</span><span class="r">${s.hands || 0}</span><span class="r">${s.wins || 0}</span><span class="${net >= 0 ? 'pos' : 'neg'}">${net > 0 ? '+' : ''}${fmt(net)}</span><span class="best">${s.best ? esc(s.best.name) : '-'}</span></div>`; }).join('');
+    $('stats-body').innerHTML = `<div class="st-row head"><span></span><span>이름</span><span class="r">판</span><span class="r">승</span><span class="r">충전</span><span class="r">순손익</span><span class="r">최고</span></div>` +
+      rows.map(p => { const s = p.stats || {}; const net = s.net || 0; return `<div class="st-row"><img class="${avatarCls(p.avatar)}" src="${avatarSrc(p.avatar)}" alt=""><span class="nm">${esc(p.name)}${p.id === myId ? ' <span class="muted">나</span>' : ''}${s.maxStreak >= 2 ? ` <span class="muted">🔥${s.maxStreak}</span>` : ''}</span><span class="r">${s.hands || 0}</span><span class="r">${s.wins || 0}</span><span class="rb">${p.rebuys ? p.rebuys + '회' : '-'}</span><span class="${net >= 0 ? 'pos' : 'neg'}">${net > 0 ? '+' : ''}${fmt(net)}</span><span class="best">${s.best ? esc(s.best.name) : '-'}</span></div>`; }).join('');
     const hist = (view.history || []).slice().reverse();
     $('stats-hist').innerHTML = hist.length ? hist.map(h => `<div class="hist-row"><span>${h.no}판</span><b>${esc(h.winners.join(', '))}</b><span class="hh">${esc(h.catcher ? h.catcher + '!' : h.hand)}</span><span>판돈 ${fmt(h.pot)}</span></div>`).join('') : '<div class="hist-row">아직 없음</div>';
     $('stats').classList.remove('hidden');
@@ -1111,7 +1124,7 @@
     if (client) client.close();
     host = null; client = null; game = null; view = null; role = null; inSettings = false; chatLines = []; lastCardKey = {}; resultHand = 0; meCardsKey = ''; revealed = new Set(); revealedHand = 0;
     ['result', 'drawer', 'invite', 'rebuy', 'stats'].forEach(id => $(id).classList.add('hidden'));
-    lastSnap = null; migrating = false; clearTimeout(takeoverTimer); $('quick').dataset.k = ''; $('quick').innerHTML = '';
+    lastSnap = null; migrating = false; clearTimeout(takeoverTimer); $('quick').dataset.k = ''; $('quick').innerHTML = ''; $('chatfeed').innerHTML = ''; unread = 0; $('unread').classList.add('hidden');
     $('home-err').textContent = err || '';
     show('screen-home');
     const ps = new URLSearchParams(location.search); ps.delete('room');
@@ -1198,7 +1211,7 @@
   $('rb-yes').onclick = doRebuy;
   $('stats-close').onclick = () => $('stats').classList.add('hidden');
   $('rb-no').onclick = () => { rebuyDismissed = view ? view.handNo : 0; $('rebuy').classList.add('hidden'); };
-  $('btn-log').onclick = () => { $('drawer').classList.toggle('hidden'); renderLog(); $('log').scrollTop = $('log').scrollHeight; };
+  $('btn-log').onclick = () => { $('drawer').classList.toggle('hidden'); renderLog(); $('log').scrollTop = $('log').scrollHeight; unread = 0; $('unread').classList.add('hidden'); if (!$('drawer').classList.contains('hidden')) $('chat-in').focus(); };
   $('btn-drawer-close').onclick = () => $('drawer').classList.add('hidden');
   $('chat-form').onsubmit = e => { e.preventDefault(); doChat($('chat-in').value); $('chat-in').value = ''; };
   const bgmBtn = $('btn-bgm');

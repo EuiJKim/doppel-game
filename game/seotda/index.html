@@ -113,7 +113,7 @@
     </div>
     <div class="top-right">
       <button class="icon-btn" id="btn-invite" title="초대">➕</button>
-      <button class="icon-btn" id="btn-log" title="기록·채팅">💬</button>
+      <button class="icon-btn" id="btn-log" title="기록·채팅">💬<span class="unread hidden" id="unread"></span></button>
       <button class="icon-btn" id="btn-bgm" title="배경음악">🎵</button>
       <button class="icon-btn" id="btn-mute" title="효과음">🔊</button>
       <button class="icon-btn" id="btn-leave" title="나가기">✕</button>
@@ -123,6 +123,7 @@
   <div class="felt">
     <div class="seats" id="seats"></div>
     <div class="center">
+      <div class="chatfeed" id="chatfeed"></div>
       <div class="deck" id="deck"><div class="dk"></div><div class="dk"></div><div class="dk"></div><div class="dk"></div></div>
       <div class="pot-row"><div class="pot-box" id="pot-box"><span class="pot-label">판돈</span><b class="pot" id="pot">0</b><span class="won">원</span></div><div class="stack pot" id="pot-pile"></div></div>
       <div class="board" id="board"></div>
