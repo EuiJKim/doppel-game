@@ -190,7 +190,8 @@
       const redeal = prev && prev.result && prev.result.redeal;
       let participants;
       if (redeal) {
-        participants = prev.participants.filter(id => !prev.folded.has(id) && this.player(id) && this.player(id).connected);
+        const base = prev.result.tied ? prev.result.tied : prev.participants.filter(id => !prev.folded.has(id));
+        participants = base.filter(id => this.player(id) && this.player(id).connected && !this.player(id).away);
         if (participants.length < 2) participants = null;
       }
       const carry = redeal ? prev.pot : (this.pendingCarry || 0); this.pendingCarry = 0;
@@ -220,7 +221,7 @@
       };
       for (const id of participants) { h.cards[id] = []; h.contrib[id] = 0; if (this.player(id).chips === 0) h.allin.add(id); }
       this.phase = 'betting';
-      this._log(redeal ? `${this.handNo}판 재경기 (${mode.label}) — 이월 ${carry}원` : `${this.handNo}판 시작 · ${mode.label} (딜러 ${this.player(dealer).name})`);
+      this._log(redeal ? `${this.handNo}판 재경기 (${mode.label}${prev.result.tied ? ' · 비긴 사람끼리' : ''}) — 이월 ${carry}원` : `${this.handNo}판 시작 · ${mode.label} (딜러 ${this.player(dealer).name})`);
       if (!redeal) {
         for (const id of participants) {
           const p = this.player(id);
@@ -435,8 +436,9 @@
         const entries = live.map(id => ({ id, cards: used[id] }));
         const r = R.resolve(entries, { special: this.settings.special });
         if (r.redeal) {
-          result = { redeal: true, reason: r.reason, by: r.by, winners: [], hands: r.hands, used, payouts, revealed: live };
-          this._log(`${this.player(r.by).name}의 ${r.reason} — 재경기! (팟 ${h.pot}원 이월)`);
+          result = { redeal: true, reason: r.reason, by: r.by, tied: r.tied || null, winners: [], hands: r.hands, used, payouts, revealed: live };
+          if (r.tied) this._log(`무승부 (${r.tied.map(id => this.player(id).name).join(' vs ')}, ${r.hands[r.tied[0]].name}) — 판돈 ${h.pot}원 묻고 다시!`);
+          else this._log(`${this.player(r.by).name}의 ${r.reason} — 재경기! (팟 ${h.pot}원 이월)`);
         } else {
           this._distribute(live, used, r, payouts);
           result = { winners: r.winners, hands: r.hands, used, payouts, revealed: live, caught: r.caught, catcher: r.catcher };

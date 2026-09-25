@@ -65,9 +65,11 @@ t('특수족보 OFF면 땡잡이 무시', () => {
   const r = R.resolve([{ id: 'a', cards: [C(7, '띠'), C(7, '열')] }, { id: 'b', cards: [C(3, '띠'), C(7, '열')] }], { special: false });
   assert.deepEqual(r.winners, ['a']);
 });
-t('동점 → 공동 승자', () => {
-  const r = R.resolve([{ id: 'a', cards: [C(1, '띠'), C(5, '띠')] }, { id: 'b', cards: [C(2, '열'), C(4, '띠')] }]);
-  assert.deepEqual(r.winners.sort(), ['a', 'b']);
+t('동점 → 무승부 재경기(묻고 다시), noRedeal 이면 나눠 가짐', () => {
+  const r = R.resolve([{ id: 'a', cards: [C(1, '띠'), C(5, '띠')] }, { id: 'b', cards: [C(2, '열'), C(4, '띠')] }, { id: 'c', cards: [C(3, '광'), C(7, '띠')] }]);
+  assert.equal(r.redeal, true); assert.equal(r.reason, '무승부'); assert.deepEqual(r.tied.sort(), ['a', 'b']);
+  const r2 = R.resolve([{ id: 'a', cards: [C(1, '띠'), C(5, '띠')] }, { id: 'b', cards: [C(2, '열'), C(4, '띠')] }], { noRedeal: true });
+  assert.deepEqual(r2.winners.sort(), ['a', 'b']);
 });
 
 console.log('엔진');
@@ -554,6 +556,25 @@ t('봇: 플레이어로 참가, 스냅샷 복원 후에도 접속 상태', () =>
   g.startHand(); while (g.phase === 'betting') g.act(g.hand.turn, 'check');
   const g2 = Game.restore(JSON.parse(JSON.stringify(g.snapshot('p0'))), 'p0');
   assert.equal(g2.player('bot1').connected, true); assert(g2.player('bot1').bot);
+});
+
+t('무승부 → 판돈 묻고 비긴 사람끼리만 다음 판', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand();
+  const h = g.hand;
+  h.cards.p0 = [C(1, '띠')]; h.cards.p1 = [C(2, '열')]; h.cards.p2 = [C(3, '광')];
+  h.deck = [C(7, '띠') /*p0*/, C(6, '띠') /*p2*/, C(4, '띠') /*p1*/];   // p0 1+7=8끗, p1 2+4=6끗, p2 3+6=9(갑오)? → 조정
+  h.deck = [C(9, '띠') /*p0: 1+9 구삥*/, C(6, '띠') /*p2: 3+6 갑오*/, C(4, '띠') /*p1: 2+4 6끗*/];
+  h.deck = [C(5, '띠') /*p0: 1+5=6끗*/, C(7, '띠') /*p2: 3+7 땡잡이(망통)*/, C(4, '띠') /*p1: 2+4=6끗*/];
+  g.act('p1', 'check'); g.act('p2', 'check'); g.act('p0', 'check');
+  g.act('p1', 'check'); g.act('p2', 'check'); g.act('p0', 'check');
+  assert.equal(g.phase, 'result');
+  assert(g.hand.result.redeal); assert.deepEqual(g.hand.result.tied.sort(), ['p0', 'p1']);
+  assert.equal(g.hand.pot, 300);
+  g.startHand();
+  assert.deepEqual(g.hand.participants.sort(), ['p0', 'p1']);   // 진 p2는 빠진다
+  assert.equal(g.hand.pot, 300);
+  assert.equal(total(g), 30000);
 });
 
 console.log(`\n${n} tests passed`);

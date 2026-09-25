@@ -1003,7 +1003,7 @@
     const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
     {
       {
-        if (r.redeal) { banner('재경기!', 'gold small', `${r.reason} — 판돈 이월`); Snd.deal(); showResultPanel(1500); return; }
+        if (r.redeal) { banner(r.tied ? '무승부!' : '재경기!', 'gold small', r.tied ? `${r.tied.map(id => v.players.find(p => p.id === id)?.name).join(' vs ')} — 판돈 묻고 다시` : `${r.reason} — 판돈 이월`); Snd.deal(); showResultPanel(1500); return; }
         const top = r.winners.length ? r.hands[r.winners[0]] : null;
         const bigHand = top && (top.tier === '광땡' || top.tier === '땡');
         if (r.byFold) banner(`${names} 승리`, 'small', '모두 다이');
@@ -1056,7 +1056,7 @@
     const res = view.result; const box = $('result');
     const nameOf = id => view.players.find(p => p.id === id)?.name || '?';
     const title = $('result-title'); title.className = 'result-title';
-    if (res.redeal) { title.textContent = `${nameOf(res.by)}의 ${res.reason} — 재경기!`; title.classList.add('redeal'); }
+    if (res.redeal) { title.textContent = res.tied ? `무승부! ${res.tied.map(nameOf).join(' vs ')} — 판돈 묻고 다시` : `${nameOf(res.by)}의 ${res.reason} — 재경기!`; title.classList.add('redeal'); }
     else if (res.byFold) { title.textContent = `${nameOf(res.winners[0])} 승리 — 모두 다이`; title.classList.add('win'); }
     else {
       const w = res.winners.map(id => `${nameOf(id)} (${res.hands[id].name})`).join(', ');

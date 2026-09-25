@@ -116,6 +116,8 @@
       const jabi = ids.find(id => hands[id].special === '땡잡이');
       if (jabi && best >= 901 && best <= 909) return { redeal: false, winners: [jabi], hands, caught: bestIds, catcher: '땡잡이' };
     }
+    /* 무승부: 같은 족보로 비기면 판돈을 묻고 비긴 사람들끼리 다시 (noRedeal 이면 나눠 가짐) */
+    if (bestIds.length > 1 && !(opts && opts.noRedeal)) return { redeal: true, reason: '무승부', by: null, tied: bestIds, winners: [], hands };
     return { redeal: false, winners: bestIds, hands };
   }
 
