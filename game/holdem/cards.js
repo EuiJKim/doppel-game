@@ -21,19 +21,19 @@ const HoldemCards = (() => {
     if (cache[c.id]) return cache[c.id];
     const color = c.red ? RED : BLK;
     let mid = '';
-    if (c.r === 14) mid = pip(c.sym, 50, 72, 56, color);
+    if (c.r === 14) mid = pip(c.sym, 50, 72, 62, color);
     else if (c.r >= 11) {
       mid = `<rect x="22" y="30" width="56" height="80" rx="4" fill="${c.red ? '#fbe9e7' : '#eceff1'}" stroke="${color}" stroke-width="1.5"/>
         <text x="50" y="66" font-size="40" font-weight="800" text-anchor="middle" dominant-baseline="central" fill="${color}" font-family="Georgia, serif">${FACE_KO[c.r]}</text>
         ${pip(c.sym, 33, 40, 12, color)}${pip(c.sym, 67, 100, 12, color, true)}
         <text x="50" y="94" font-size="10" text-anchor="middle" fill="${color}" font-family="serif" letter-spacing="1">${c.r === 11 ? 'JACK' : c.r === 12 ? 'QUEEN' : 'KING'}</text>`;
-    } else mid = PIPS[c.r].map(([x, y]) => pip(c.sym, x, y, c.r >= 9 ? 15 : 18, color, y > 70)).join('');
+    } else mid = PIPS[c.r].map(([x, y]) => pip(c.sym, x, y, c.r >= 9 ? 17 : 21, color, y > 70)).join('');
     const idx = (x, y, flip) => `<g ${flip ? `transform="rotate(180 ${x} ${y})"` : ''}>
-      <text x="${x}" y="${y - 4}" font-size="${c.r === 10 ? 13 : 15}" font-weight="800" text-anchor="middle" fill="${color}" font-family="Arial, Helvetica, sans-serif">${c.rank}</text>
-      <text x="${x}" y="${y + 11}" font-size="13" text-anchor="middle" fill="${color}">${c.sym}</text></g>`;
+      <text x="${x}" y="${y - 3}" font-size="${c.r === 10 ? 16 : 20}" font-weight="900" text-anchor="middle" fill="${color}" font-family="Arial, Helvetica, sans-serif">${c.rank}</text>
+      <text x="${x}" y="${y + 14}" font-size="15" text-anchor="middle" fill="${color}">${c.sym}</text></g>`;
     const svg = `<svg viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">
       <rect x="1" y="1" width="98" height="138" rx="8" fill="#fff" stroke="#c9c9c9" stroke-width="1"/>
-      ${idx(11, 16)}${idx(89, 124, true)}${mid}</svg>`;
+      ${idx(11, 19)}${idx(89, 121, true)}${mid}</svg>`;
     cache[c.id] = svg;
     return svg;
   }
