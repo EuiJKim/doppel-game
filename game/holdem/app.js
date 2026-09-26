@@ -170,6 +170,16 @@
   }
   function backHtml(size, extra) { return `<div class="card back ${size || ''} ${extra || ''}">${CARDS.BACK}</div>`; }
   const sdGate = p => !!(sd && view && sd.handNo === view.handNo && !sd.done && p.id !== myId && !view.spectating);
+  /* 올인 런아웃 연출 중에는 보드를 한 스트리트씩만 보여주고, 족보·승자·돈은 그때까지 열린 보드 기준으로만 계산한다 (미리 새지 않게) */
+  const runoutOn = () => !!(sd && sd.runout && view && sd.handNo === view.handNo && !sd.done);
+  const dispBoard = () => runoutOn() ? view.board.slice(0, sd.boardShown) : view.board;
+  const STREET_OF = { 0: '프리플롭', 3: '플롭', 4: '턴', 5: '리버' };
+  function dispHand(p) {
+    if (!runoutOn() || !p.cards || p.cards.length !== 2) return { desc: p.handDesc, best: p.best };
+    const b = dispBoard();
+    if (b.length < 3) return { desc: R.holeDesc(p.cards), best: null };
+    const h = R.evalBest(p.cards.concat(b)); return { desc: h.desc, best: null, h };
+  }
   function cardsHtml(p, size, usedIds, delayIdx) {
     const gate = sdGate(p);
     const faces = p.cards ? (gate ? Math.min(p.cards.length, sd.open[p.id] || 0) : p.cards.length) : 0;
@@ -319,7 +329,7 @@
     for (const p of game.players) {
       if (!p.bot || !v.players.find(x => x.id === p.id && x.inHand)) continue;
       const won = r.winners.includes(p.id); const lines = won ? BOT_TAUNT.win : BOT_TAUNT.lose;
-      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, 2500 + Math.random() * 2500);
+      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, 11000 + Math.random() * 3000);   // 쇼다운·런아웃 연출이 끝난 뒤에 (승자가 미리 안 새게)
     }
   }
   function scheduleHostTimer() {
@@ -478,7 +488,7 @@
     const shownChips = p => hideMoney ? p.chips - (p.payout || 0) : p.chips;
     const shownPot = hideMoney ? view.players.reduce((a, p) => a + (p.payout || 0), 0) : view.pot;
     $('top-code').textContent = code;
-    $('top-hand').textContent = view.handNo ? `${view.handNo}판 · ${view.stageLabel}` : '';
+    $('top-hand').textContent = view.handNo ? `${view.handNo}판 · ${runoutOn() ? STREET_OF[dispBoard().length] : view.stageLabel}` : '';
     $('mode-tag').textContent = `블라인드 ${fmt(view.sb)}/${fmt(view.settings.bb)}`;
     { const pe = $('pot'); const prevPot = +pe.dataset.v || 0; tweenNum(pe, shownPot, 500); if (shownPot > prevPot && prevPot) { pe.classList.remove('tick'); void pe.offsetWidth; pe.classList.add('tick'); } }
     { const pile = $('pot-pile'); const h = stackHtml(view.phase === 'result' && !hideMoney ? 0 : shownPot, false); if (pile.dataset.k !== h) { pile.innerHTML = h; pile.dataset.k = h; pile.classList.remove('bump'); void pile.offsetWidth; pile.classList.add('bump'); } }
@@ -503,12 +513,12 @@
       else if (p.away && !p.inHand) { status = '자리 비움'; scls = 'away'; }
       else if (view.handNo && !p.inHand) status = p.chips === 0 ? '돈 없음' : '대기';
       else if (p.folded) { status = '폴드'; scls = 'die'; }
-      else if (res && p.handDesc) status = sdGate(p) && !sd.hand[p.id] ? '…' : p.handDesc;
+      else if (res && p.handDesc) status = sdGate(p) && !sd.hand[p.id] ? '…' : dispHand(p).desc;
       else if (p.allin) { status = '올인'; scls = 'hot'; }
       else if (p.isTurn) { status = '생각 중…'; scls = 'hot'; }
       if (view.spectating && p.inHand && p.handDesc && !res && !p.folded) status = `<b class="spec-hand">${esc(p.handDesc)}</b>${status ? ' · ' + status : ''}`;
       const net = res && p.inHand && !hideMoney ? p.payout - p.contrib : 0;
-      const usedIds = res && res.used ? res.used[p.id] : null;
+      const usedIds = res && res.used && !runoutOn() ? res.used[p.id] : null;
       return `<div class="${cls.join(' ')}" data-id="${p.id}">
         ${p.isDealer ? '<div class="dealer">D</div>' : ''}
         ${p.isSB && p.inHand ? '<div class="blind sb">SB</div>' : p.isBB && p.inHand ? '<div class="blind bb">BB</div>' : ''}
@@ -535,7 +545,7 @@
       if (view.turn === myId) { cm.textContent = me && view.curBet > me.bet ? `내 차례 · 콜 ${won(view.curBet - me.bet)}` : '내 차례'; cm.classList.add('me'); }
       else { const t = view.players.find(p => p.id === view.turn); cm.textContent = t ? `${t.name}의 차례` : ''; }
     } else if (view.phase === 'result' && res) {
-      cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
+      cm.textContent = (sd && sd.handNo === view.handNo && !sd.done) ? (sd.runout ? (sd.cur || '올인! 보드를 끝까지…') : sd.cur ? `쇼다운 · ${sd.cur} 공개 중…` : '쇼다운…') : `${res.winners.map(id => view.players.find(p => p.id === id)?.name).join(', ')} 승리`;
     } else cm.textContent = '';
     $('timer-bar').classList.toggle('on', !!localDeadline && view.phase === 'betting');
 
@@ -584,7 +594,7 @@
       ab.innerHTML = `<div class="wait">${me && me.folded ? '폴드 — 이번 판은 구경' : view.spectating ? '👀 관전 중 — 모든 패가 보여요 · 다음 판부터 참가' : me && !me.inHand ? '다음 판부터 참가해요' : me && me.allin ? '올인 — 결과를 기다리는 중' : t ? `${esc(t.name)} 차례를 기다리는 중` : '…'}</div>`;
     } else if (sd && sd.handNo === view.handNo && !sd.done) {
       closeRaise();
-      ab.innerHTML = `<div class="wait">쇼다운 중… ${sd.cur ? esc(sd.cur) + ' 공개' : ''}</div><button class="btn" id="btn-skip-sd">건너뛰기 ▶</button>`;
+      ab.innerHTML = `<div class="wait">${sd.runout ? esc(sd.cur || '올인! 보드를 끝까지…') : `쇼다운 중… ${sd.cur ? esc(sd.cur) + ' 공개' : ''}`}</div><button class="btn" id="btn-skip-sd">건너뛰기 ▶</button>`;
       $('btn-skip-sd').onclick = () => { if (sd && sd.skip) sd.skip(); };
     } else {
       closeRaise();
@@ -604,7 +614,8 @@
     renderQuick(me);
     animateDeals();
     if (view.phase === 'result' && res) renderResult(me);
-    if (me && me.canRebuy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rb-yes').textContent = `${won(view.settings.startChips)}으로 다시 참가`; $('rb-desc').textContent = `${won(view.settings.startChips)}으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.`; $('rebuy').classList.remove('hidden'); }
+    const sdBusy = !!(sd && sd.handNo === view.handNo && !sd.done);   // 쇼다운 연출 중엔 '돈을 다 잃었어요'가 먼저 뜨면 결과가 샌다
+    if (me && me.canRebuy && !sdBusy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rb-yes').textContent = `${won(view.settings.startChips)}으로 다시 참가`; $('rb-desc').textContent = `${won(view.settings.startChips)}으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.`; $('rebuy').classList.remove('hidden'); }
     else if (!(me && me.canRebuy)) $('rebuy').classList.add('hidden');
     tick();
   }
@@ -613,11 +624,12 @@
   function renderBoard(me) {
     const board = $('board');
     if (!view.handNo) { board.innerHTML = ''; board.dataset.n = 0; return; }
-    const usedIds = (view.phase === 'result' && me && me.best) ? me.best : [];
+    const usedIds = (view.phase === 'result' && me && me.best && !runoutOn()) ? me.best : [];
     const prevN = +board.dataset.n || 0;
-    const n = view.board.length;
+    const bd = dispBoard();
+    const n = bd.length;
     const streetsAtOnce = n > prevN ? (prevN < 3 ? 1 + Math.max(0, n - 3) : n - prevN) : 0;
-    let s = view.board.map((c, i) => {
+    let s = bd.map((c, i) => {
       const isNew = i >= prevN;
       let delay = 0;
       if (isNew) { const street = i < 3 ? 0 : i - 2; const firstNewStreet = prevN < 3 ? 0 : prevN - 2; delay = (street - firstNewStreet) * (streetsAtOnce > 1 ? 1100 : 0) + (i < 3 ? i * 160 : 0); }
@@ -662,12 +674,13 @@
       $('peek-modes').innerHTML = '';
       return;
     }
-    const usedIds = me.best || [];
+    const usedIds = runoutOn() ? [] : (me.best || []);
+    const bd = dispBoard();
     const allRevealed = me.cards.every(c => revealed.has(c));
-    const key = [me.cards.join(','), me.cards.map(c => revealed.has(c) ? 1 : 0).join(''), allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase, view.board.length].join('|');
+    const key = [me.cards.join(','), me.cards.map(c => revealed.has(c) ? 1 : 0).join(''), allRevealed ? usedIds.join(',') : '', me.folded ? 1 : 0, view.phase, bd.length, runoutOn() ? 1 : 0].join('|');
     /* 다 열었을 때 / 보드가 열릴 때 내 패 리액션 (판·스트리트마다 한 번) */
-    if (allRevealed && !me.folded && goodKey !== `${view.handNo}:${view.board.length}`) {
-      goodKey = `${view.handNo}:${view.board.length}`;
+    if (allRevealed && !me.folded && goodKey !== `${view.handNo}:${bd.length}`) {
+      goodKey = `${view.handNo}:${bd.length}`;
       reaction(me);
     }
     if (key !== meCardsKey && peekActive) peekPending = true;
@@ -676,8 +689,8 @@
       const prevCount = box.querySelectorAll('.card').length;
       box.innerHTML = me.cards.map((c, i) => {
         const isRev = revealed.has(c);
-        const used = allRevealed && usedIds.includes(c) && view.phase === 'result';
-        const dim = allRevealed && view.phase === 'result' && usedIds.length && !usedIds.includes(c);
+        const used = allRevealed && usedIds.includes(c) && view.phase === 'result' && !runoutOn();
+        const dim = allRevealed && view.phase === 'result' && !runoutOn() && usedIds.length && !usedIds.includes(c);
         const cls = ['big', isRev ? '' : 'peek', i >= prevCount ? 'deal' : '', used ? 'used' : '', dim ? 'dim' : ''].join(' ');
         const inner = isRev ? '' : `<div class="cover">${CARDS.BACK}</div><div class="hint">${PEEK_HINT[peekMode]}</div>`;
         return cardHtml(c, cls, '').replace('</div></div>', `</div>${inner}</div>`);
@@ -688,8 +701,8 @@
     if (me.folded) mh.textContent = '폴드';
     else if (!allRevealed) { mh.classList.add('hidden-hand'); mh.textContent = revealed.size ? '더 열어보세요…' : '카드를 쪼아보세요'; }
     else {
-      const desc = me.handDesc || '';
-      if (view.board.length >= 3 && me.best) { const h = R.evalBest(me.cards.concat(view.board)); if (h.cat >= 4) mh.classList.add('special'); mh.innerHTML = `${esc(desc)}<span class="sub">${view.board.length < 5 ? '지금까지' : '최종'}</span>`; }
+      const desc = dispHand(me).desc || '';
+      if (bd.length >= 3) { const h = R.evalBest(me.cards.concat(bd)); if (h.cat >= 4) mh.classList.add('special'); mh.innerHTML = `${esc(desc)}<span class="sub">${bd.length < 5 ? '지금까지' : '최종'}</span>`; }
       else mh.textContent = desc;
     }
     const pm = $('peek-modes');
@@ -828,20 +841,21 @@
   }
   /* 내 패 리액션: 프리플롭은 2장 강도, 보드가 열리면 족보 */
   function reaction(me) {
-    if (view.board.length < 3) {
+    const bd = dispBoard();
+    if (bd.length < 3) {
       const s = R.holeStrength(me.cards); const [a, b] = me.cards.map(c => R.cardById(c));
       if (a.r === b.r && a.r >= 10) { reactionText('어이구 좋다~ ' + me.handDesc, ''); Snd.good(); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
       else if (s >= 0.7) { reactionText('오~ 괜찮은데? ' + me.handDesc, 'ok'); Snd.pop(); }
       else if (s <= 0.28) reactionText('음… 애매하네', 'bad');
       return;
     }
-    const h = R.evalBest(me.cards.concat(view.board));
+    const h = R.evalBest(me.cards.concat(bd));
     const usesHole = h.cards.some(c => me.cards.includes(c));
     if (h.cat >= 6) { reactionText('대박!!! ' + h.name, 'great'); Snd.great(); confetti(30); try { navigator.vibrate && navigator.vibrate([80, 40, 120]); } catch (e) { } }
     else if (h.cat >= 4) { reactionText('어이구 좋다~ ' + h.name, ''); Snd.good(); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
     else if (h.cat >= 2 && usesHole) { reactionText('오~ ' + h.desc, 'ok'); Snd.pop(); }
     else if (h.cat === 1 && usesHole && h.tb[0] >= 11) reactionText('먹을 만하네', 'ok');
-    else if (view.board.length === 5 && h.cat === 0) reactionText('…망했다', 'bad');
+    else if (bd.length === 5 && h.cat === 0) reactionText('…망했다', 'bad');
   }
   function celebrate(net, big, handName) {
     const el = $('winfx'); el.className = 'winfx';
@@ -898,7 +912,8 @@
     if ((v.street !== prev.street || v.phase !== prev.phase) && prev.phase === 'betting') {
       for (const q of prev.players) if (q.bet > 0) setTimeout(() => flyChip(seatEl(q.id), $('pot-pile'), q.bet), 60);
     }
-    if (v.street > prev.street) {
+    const runout = v.phase === 'result' && v.result && !v.result.byFold && v.street > prev.street;   // 올인 → 보드가 한 번에 깔림: 아래 런아웃 연출이 맡는다
+    if (v.street > prev.street && !runout) {
       const first = prev.street + 1;
       for (let s = first; s <= v.street; s++) setTimeout(() => { banner(STREET_BANNER[s], 'gold small', s === 1 ? '공유 카드 3장' : ''); s === 1 ? Snd.flop() : Snd.reveal(); }, (s - first) * 1100);
       if (v.street - prev.street > 1) setTimeout(() => banner('올인 — 보드를 끝까지!', 'red small'), 100);
@@ -906,11 +921,52 @@
     if (v.phase === 'betting' && v.turn === myId && (prev.turn !== myId || prev.phase !== 'betting')) Snd.turn();
     if (v.phase === 'result' && prev.phase !== 'result' && v.result) {
       const r = v.result;
-      for (const id of r.winners) say(id, 'win');
+      if (r.byFold) for (const id of r.winners) say(id, 'win');   // 쇼다운이면 승자 발표 때
       const showdown = !r.byFold;
-      if (showdown) { banner('쇼다운!', 'red small'); Snd.whoosh(); startShowdown(r, v, me); }
+      if (showdown && runout) startRunout(r, v, me, prev.board.length);
+      else if (showdown) { banner('쇼다운!', 'red small'); Snd.whoosh(); startShowdown(r, v, me); }
       else setTimeout(() => announce(r, v, me), 200);
     }
+  }
+  /* 올인 런아웃: 패를 먼저 까고, 보드를 플롭 → 턴 → 리버 순서로 천천히. 리버 앞엔 두구두구. 승자는 리버가 열린 뒤에야 */
+  function startRunout(r, v, me, shown) {
+    sd = { handNo: v.handNo, open: {}, hand: {}, done: false, timers: [], startedAt: Date.now(), cur: '', runout: true, boardShown: shown };
+    const at = (ms, fn) => sd.timers.push(setTimeout(() => { if (sd && !sd.done && view && view.handNo === sd.handNo) fn(); }, ms));
+    const felt = $('screen-table').querySelector('.felt');
+    const players = v.players.filter(p => r.revealed.includes(p.id) && p.cards);
+    const leaderAt = () => {
+      const b = v.board.slice(0, sd.boardShown); let best = null;
+      for (const p of players) {
+        const h = b.length >= 3 ? R.evalBest(p.cards.concat(b)) : null;
+        const sc = h ? h.score : R.holeStrength(p.cards);
+        if (!best || sc > best.sc) best = { p, sc, desc: h ? h.desc : R.holeDesc(p.cards), tie: false };
+        else if (sc === best.sc) best.tie = true;
+      }
+      return best;
+    };
+    let leader = null, t = 300;
+    at(t, () => {
+      banner('올인!', 'red', '패 공개 — 보드를 끝까지 깝니다'); Snd.big(); Snd.whoosh();
+      for (const p of players) { sd.open[p.id] = 9; sd.hand[p.id] = true; }
+      leader = leaderAt(); sd.cur = leader ? `${leader.tie ? '' : '현재 1등: '}${leader.tie ? '아직 박빙' : `${leader.p.name} (${leader.desc})`}` : '';
+      renderTable();
+    });
+    t += 1700;
+    const streets = [3, 4, 5].filter(n => n > shown);
+    for (const n of streets) {
+      if (n === 5) { t += 200; at(t, () => { sd.cur = '리버… 두구두구'; renderTable(); Snd.drum(); Snd.riser(); felt.classList.add('shake'); setTimeout(() => felt.classList.remove('shake'), 500); }); t += 1300; }
+      at(t, () => {
+        sd.boardShown = n;
+        banner(n === 3 ? '플롭!' : n === 4 ? '턴!' : '리버!', 'gold small'); n === 3 ? Snd.flop() : Snd.reveal();
+        const nl = leaderAt(); const flipped = !!(leader && nl && !nl.tie && (leader.tie || nl.p.id !== leader.p.id)); leader = nl;
+        sd.cur = nl ? (nl.tie ? '박빙…' : `${flipped ? '역전! ' : '현재 1등: '}${nl.p.name} (${nl.desc})`) : '';
+        renderTable();
+        if (flipped) setTimeout(() => { if (sd && !sd.done) { banner('역전!!', 'red'); Snd.pop(); felt.classList.add('shake'); setTimeout(() => felt.classList.remove('shake'), 600); } }, n === 3 ? 800 : 600);
+      });
+      t += n === 3 ? 2100 : n === 4 ? 1900 : 1500;
+    }
+    at(t, () => finishShowdown(r, v, me));
+    sd.skip = () => finishShowdown(r, v, me);
   }
   /* 쇼다운 순차 공개: 진 사람부터, 마지막 승자는 두구두구 뒤에 */
   function startShowdown(r, v, me) {
@@ -983,6 +1039,7 @@
     setTimeout(() => { if (view && view.phase === 'result' && view.handNo === hn) $('result').classList.remove('hidden'); }, ms);
   }
   function announce(r, v, me) {
+    if (!r.byFold && !r.redeal) for (const id of r.winners) say(id, 'win');
     const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
     const top = r.winners.length ? r.hands[r.winners[0]] : null;
     const bigHand = top && top.cat >= 4;

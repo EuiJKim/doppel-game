@@ -333,7 +333,7 @@
     for (const p of game.players) {
       if (!p.bot || !v.players.find(x => x.id === p.id && x.inHand)) continue;
       const won = r.winners.includes(p.id); const lines = won ? BOT_TAUNT.win : BOT_TAUNT.lose;
-      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, 2500 + Math.random() * 2500);
+      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, 11000 + Math.random() * 3000);   // 쇼다운 연출이 끝난 뒤에 (승자가 미리 안 새게)
     }
   }
   function scheduleHostTimer() {
@@ -648,7 +648,8 @@
     animateDeals();
     /* 결과 패널 · 재참가 안내 */
     if (view.phase === 'result' && res) renderResult(me);
-    if (me && me.canRebuy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rb-yes').textContent = `${won(view.settings.startChips)}으로 다시 참가`; $('rb-desc').textContent = `${won(view.settings.startChips)}으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.`; $('rebuy').classList.remove('hidden'); }
+    const sdBusy = !!(sd && sd.handNo === view.handNo && !sd.done);   // 쇼다운 연출 중엔 '돈을 다 잃었어요'가 먼저 뜨면 결과가 샌다
+    if (me && me.canRebuy && !sdBusy && rebuyDismissed !== view.handNo && $('result').classList.contains('hidden')) { $('rb-yes').textContent = `${won(view.settings.startChips)}으로 다시 참가`; $('rb-desc').textContent = `${won(view.settings.startChips)}으로 다시 참가할 수 있어요. 지금 판이 끝나면 바로 들어갑니다.`; $('rebuy').classList.remove('hidden'); }
     else if (!(me && me.canRebuy)) $('rebuy').classList.add('hidden');
     tick();
   }
@@ -933,9 +934,9 @@
     if (v.phase === 'result' && prev.phase !== 'result' && v.result) {
       const r = v.result;
       const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
-      for (const id of r.winners) say(id, 'win');
+      if (r.byFold) for (const id of r.winners) say(id, 'win');   // 쇼다운이면 승자 발표 때
       const showdown = !r.byFold && !r.redeal;
-      if (showdown) { banner('쇼다운!', 'red small'); Snd.whoosh(); startShowdown(r, v, me); }
+      if (showdown) setTimeout(() => { if (view && view.handNo === v.handNo && view.phase === 'result') { banner('쇼다운!', 'red small'); Snd.whoosh(); startShowdown(r, v, me); } }, 0);   // 렌더(딜 애니메이션 예약) 뒤에 시작
       else setTimeout(() => announce(r, v, me), 200);
     }
   }
@@ -948,7 +949,7 @@
     const felt = $('screen-table').querySelector('.felt');
     const stage = $('sdstage');
     let leader = null;   // { name, score }
-    let t = 450;
+    let t = 450 + Math.max(0, dealEndsAt - Date.now());   // 올인으로 마지막 장이 막 날아오는 중이면 다 도착한 뒤에
     at(t, () => felt.classList.add('dim'));
     order.forEach((p, pi) => {
       const last = pi === order.length - 1, isWin = r.winners.includes(p.id);
@@ -1018,6 +1019,7 @@
   }
   /* 승자 발표 + 연출 */
   function announce(r, v, me) {
+    if (!r.byFold && !r.redeal) for (const id of r.winners) say(id, 'win');
     const names = r.winners.map(id => v.players.find(p => p.id === id)?.name).join(', ');
     {
       {
