@@ -70,6 +70,7 @@
     }
     return {
       deal: () => tone(300, 0.08, 'triangle', 0.06, 520),
+      unlock: () => { try { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === 'suspended') ctx.resume(); } catch (e) { } },
       shuffle: () => { for (let i = 0; i < 9; i++) noise(0.09, 0.12, i * 0.11, 1800 + (i % 3) * 600); },
       slide: () => noise(0.12, 0.07, 0, 3200),
       turn: () => { tone(660, 0.12, 'sine', 0.12); tone(880, 0.16, 'sine', 0.12, null, 0.12); },
@@ -213,7 +214,7 @@
   /* 다음 판 시작: 진 사람이 시작한다(접속 중이면). 진 사람이 없거나 나갔으면 방장 */
   function doStart() {
     inSettings = false;
-    if (role === 'host') { if (!game.startHand()) toast('돈이 있는 사람이 2명 이상 있어야 시작할 수 있어요'); }
+    if (role === 'host') { if (maybeSwitch()) return; if (!game.startHand()) toast('돈이 있는 사람이 2명 이상 있어야 시작할 수 있어요'); }
     else client.send({ t: 'start' });
   }
   function doAway(v) { if (role === 'host') game.setAway(myId, v); else client.send({ t: 'away', away: !!v }); }
@@ -246,7 +247,7 @@
         else if (msg.t === 'rebuy') game.rebuy(pid);
         else if (msg.t === 'away') game.setAway(pid, !!msg.away);
         else if (msg.t === 'extend') game.extendTurn(pid);
-        else if (msg.t === 'start') game.startBy(pid);
+        else if (msg.t === 'start') { if (game.starter() === pid && !maybeSwitch()) game.startBy(pid); }
         else if (msg.t === 'chat') hostChat(p.name, String(msg.text || '').slice(0, 60));
       },
       onError: (msg, err) => {
@@ -320,7 +321,7 @@
       const broke = game.players.find(p => p.bot && game.canRebuy(p.id));
       if (broke) { botTimer = setTimeout(() => { if (game.canRebuy(broke.id)) game.rebuy(broke.id); }, 1200); return; }
       const st = game.starter();
-      if (st && game.player(st) && game.player(st).bot && game.canStart()) { botTimer = setTimeout(() => { if (game.starter() === st && game.canStart()) game.startBy(st); }, 6000); }
+      if (st && game.player(st) && game.player(st).bot && game.canStart()) { botTimer = setTimeout(() => { if (game.starter() === st && game.canStart() && !maybeSwitch()) game.startBy(st); }, 6000); }
     }
   }
   function botTaunts(prev, v) {
@@ -329,7 +330,7 @@
     for (const p of game.players) {
       if (!p.bot || !v.players.find(x => x.id === p.id && x.inHand)) continue;
       const won = r.winners.includes(p.id); const lines = won ? BOT_TAUNT.win : BOT_TAUNT.lose;
-      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, 11000 + Math.random() * 3000);   // 쇼다운·런아웃 연출이 끝난 뒤에 (승자가 미리 안 새게)
+      if (Math.random() < (won ? 0.6 : 0.3)) setTimeout(() => { if (host) hostChat(p.name, lines[Math.floor(Math.random() * lines.length)]); }, (r.byFold ? 2500 : 8000 + r.revealed.length * 2800) + Math.random() * 2500);   // 쇼다운·런아웃 연출이 끝난 뒤에 (승자가 미리 안 새게)
     }
   }
   function scheduleHostTimer() {
@@ -347,19 +348,69 @@
     host.broadcast({ t: 'chat', line });
     addChat(line);
   }
-  function createRoom(name) {
-    role = 'host'; myId = token; myName = name; code = N.makeCode(5);
-    game = new E.Game();
-    game.addPlayer(myId, name, myChar);
+
+  /* ── 종목 변경 (섯다 ↔ 텍사스 홀덤): 같은 방 코드·같은 사람·같은 돈으로 다른 페이지로 옮겨 간다 ──
+   * 방장: 지금 자리·돈을 sessionStorage 에 담아 새 페이지에서 같은 코드로 방을 다시 연다.
+   * 친구들: 'switch' 를 받으면 따라가서 같은 토큰으로 자동으로 다시 붙는다 (자리·돈 그대로) */
+  let switching = false;
+  const GAME_PAGE = { seotda: '../seotda/', holdem: '../holdem/' };
+  const TOKEN_KEY = { seotda: 'seotda_token', holdem: 'holdem_token' };
+  function switchGame(to, label) {
+    if (role !== 'host' || switching) return;
+    switching = true;
+    const T = { v: 1, to, code, at: Date.now(), ...game.transferOut() };
+    try { sessionStorage.setItem('doppel_transfer', JSON.stringify(T)); } catch (e) { }
+    host.broadcast({ t: 'switch', to, label });
+    switchFx(label);
+    setTimeout(() => goSwitch(to, 'host'), 1300);   // 친구들이 먼저 떠난 뒤에 방을 닫는다
+  }
+  function switchFx(label) { $('result').classList.add('hidden'); $('rebuy').classList.add('hidden'); banner(`${label}(으)로 이동!`, 'gold', '같은 방 코드 · 돈은 그대로'); Snd.whoosh(); }
+  function goSwitch(to, who) {
+    switching = true;
+    try { sessionStorage.setItem(TOKEN_KEY[to], token); sessionStorage.setItem('doppel_switch', JSON.stringify({ code, name: myName, who, at: Date.now() })); } catch (e) { }
+    clearTimeout(hostTimer); clearTimeout(botTimer); clearTimeout(takeoverTimer); Bgm.stop();
+    if (host) { try { host.close(); } catch (e) { } host = null; }
+    if (client) { try { client.close(); } catch (e) { } client = null; }
+    const ps = new URLSearchParams(location.search); ps.set('room', code); ps.set('switch', who === 'host' ? 'host' : '1');
+    location.href = GAME_PAGE[to] + '?' + ps.toString();
+  }
+  /* 다른 종목 페이지에서 넘어왔으면 곧바로 방을 다시 열거나(방장) 다시 붙는다(친구들) */
+  function resumeSwitch() {
+    const sw = params.get('switch'); if (!sw) return false;
+    let info = null, T = null;
+    try { info = JSON.parse(sessionStorage.getItem('doppel_switch') || 'null'); T = JSON.parse(sessionStorage.getItem('doppel_transfer') || 'null'); } catch (e) { }
+    try { sessionStorage.removeItem('doppel_switch'); sessionStorage.removeItem('doppel_transfer'); } catch (e) { }
+    const ps = new URLSearchParams(location.search); ps.delete('switch'); history.replaceState(null, '', location.pathname + (ps.toString() ? '?' + ps : ''));
+    const c = N.normCode(params.get('room') || '');
+    if (!info || !c || info.code !== c || Date.now() - info.at > 120000) return false;
+    nameIn.value = info.name;
+    if (!requireLib()) return true;
+    if (sw === 'host' && T && T.code === c) createRoom(info.name, c, T);
+    else joinRoom(c, info.name, true);
+    return true;
+  }
+  function maybeSwitch() {
+    if (role !== 'host' || !game.nextGame || !game.canSwitch()) return false;
+    switchGame('seotda', game.view(myId).nextGameLabel); return true;
+  }
+  function createRoom(name, fixedCode, T) {
+    role = 'host'; myId = token; myName = name; code = fixedCode || N.makeCode(5);
+    game = T ? E.Game.fromTransfer(T, myId) : new E.Game();   // 종목 변경: 자리·돈을 그대로 들고 온다
+    if (!game.player(myId)) game.addPlayer(myId, name, myChar);
     game.onChange = hostBroadcast;
-    $('connect-msg').textContent = '방을 여는 중…';
+    $('connect-msg').textContent = T ? '새 테이블을 여는 중…' : '방을 여는 중…';
     show('screen-connect');
-    host = new N.Host(code, hostHandlers(() => { host.close(); host = null; setTimeout(() => createRoom(name), 200); }));
+    host = new N.Host(code, hostHandlers(() => {
+      host.close(); host = null;
+      if (fixedCode) { role = null; game = null; joinRoom(code, name, true); }   // 같은 코드를 끝내 못 잡으면 참가자로
+      else setTimeout(() => createRoom(name), 200);
+    }));
+    if (fixedCode) host.takeover = true;   // 이전 페이지의 방 ID가 서버에서 아직 안 풀렸으면 잠깐 기다렸다 다시
     host.start();
   }
 
   /* ── 클라이언트 ── */
-  function joinRoom(c, name) {
+  function joinRoom(c, name, patient) {
     role = 'client'; myId = token; myName = name; code = c;
     $('connect-msg').textContent = `방 ${c}에 연결 중…`;
     show('screen-connect');
@@ -371,18 +422,20 @@
         if (msg.t === 'state') { if (msg.snap) lastSnap = msg.snap; migrating = false; clearTimeout(takeoverTimer); receiveView(msg.view); }
         else if (msg.t === 'chat') addChat(msg.line);
         else if (msg.t === 'err') { if (msg.fatal) goHome(msg.msg); else toast(msg.msg, 2500); }
-        else if (msg.t === 'bye') goHome('방장이 방을 닫았어요.');
+        else if (msg.t === 'bye') { if (!switching) goHome('방장이 방을 닫았어요.'); }
+        else if (msg.t === 'switch') { switching = true; switchFx(String(msg.label || '')); setTimeout(() => goSwitch(msg.to === 'seotda' ? 'seotda' : 'holdem', 'client'), 500); }
       },
       onError: msg => goHome(msg),
       onClose: msg => goHome(msg),
       onReconnecting: n => toast(`재접속 중… (${n})`, 1500),
     }, myChar);
+    if (patient) client.patience = 15;   // 종목 변경 직후: 방장이 새 테이블을 여는 동안 기다린다
     client.connect();
   }
 
   /* ── 방장 이전 ── */
   function onHostDown() {
-    if (role !== 'client' || migrating || !lastSnap) return;
+    if (role !== 'client' || migrating || !lastSnap || switching) return;
     migrating = true;
     const cands = lastSnap.players.filter(p => p.connected && p.id !== lastSnap.hostId).sort((a, b) => a.seat - b.seat);
     const rank = cands.findIndex(p => p.id === myId);
@@ -473,9 +526,10 @@
       ['set-bb', 'set-turn', 'set-max', 'set-chips'].forEach(id => { $(id).addEventListener('change', push); $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(id).blur(); push(); } }); });
     }
     const n = view.players.filter(p => p.connected).length;
-    $('btn-start').disabled = !(isHost && view.canStart);
+    const iStart = view.starter ? view.starter === myId : isHost;
+    $('btn-start').disabled = !((iStart || isHost) && view.canStart);
     $('btn-start').textContent = view.handNo ? '다음 판 시작' : '게임 시작';
-    $('lobby-hint').textContent = isHost ? (view.canStart ? `${n}명 준비됨` : '2명 이상 모이면 시작할 수 있어요 (봇을 넣어도 돼요)') : `방장이 시작하길 기다리는 중 (${n}명)`;
+    $('lobby-hint').textContent = view.starter && !iStart ? `${view.starterName}(진 사람)이 시작해요${isHost ? ' · 방장은 대신 시작할 수 있어요' : ''}` : view.starter && iStart && !isHost ? '진 사람인 내가 시작해요' : isHost ? (view.canStart ? `${n}명 준비됨` : '2명 이상 모이면 시작할 수 있어요 (봇을 넣어도 돼요)') : `방장이 시작하길 기다리는 중 (${n}명)`;
     $('btn-addbot').classList.toggle('hidden', !isHost);
   }
 
@@ -601,11 +655,15 @@
       let s = '';
       if (me && me.canRebuy) s += `<button class="btn raise" id="btn-rebuy">다시 참가<small>${won(view.settings.startChips)}</small></button>`;
       const iStart = view.starter ? view.starter === myId : isHost;
-      if (iStart) s += `<button class="btn call" id="btn-next">다음 판 시작<small>${view.starter ? '진 사람이 시작 · ' : ''}블라인드 ${fmt(view.sb)}/${fmt(view.settings.bb)}</small></button>`;
+      if (iStart) s += `<button class="btn call" id="btn-next">다음 판 시작<small>${view.starter ? '진 사람이 시작 · ' : ''}${view.nextGame ? `→ ${view.nextGameLabel}로 이동` : `블라인드 ${fmt(view.sb)}/${fmt(view.settings.bb)}`}</small></button>`;
       else s += `<div class="wait">${view.starter ? `${esc(view.starterName)}(진 사람)이` : '방장이'} 다음 판을 시작하면 이어져요</div>`;
-      if (isHost) { s += `<button class="btn" id="btn-settings">설정</button>`; if (!iStart) s += `<button class="btn ghost small" id="btn-next-force">대신 시작</button>`; }
+      if (isHost) {
+        s += `<button class="btn" id="btn-settings">설정</button>`; if (!iStart) s += `<button class="btn ghost small" id="btn-next-force">대신 시작</button>`;
+        s += `<div class="pick-title">다음 게임 (같은 방·같은 돈으로 이동)</div><div class="seg mini" id="game-seg"><button data-g="texas">♠ 텍사스 홀덤</button><button data-g="2">2장 섯다</button><button data-g="3">3장 섯다</button><button data-g="holdem">홀덤 섯다</button></div>`;
+      } else if (view.nextGame) s += `<div class="pick-title">다음 판은 ${esc(view.nextGameLabel)} — 같은 방·같은 돈으로 이동해요</div>`;
       ab.innerHTML = s;
       if ($('btn-next')) $('btn-next').onclick = doStart;
+      if ($('game-seg')) $('game-seg').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.g === (view.nextGame || 'texas')); b.onclick = () => { if (role === 'host') game.setNextGame(b.dataset.g); Snd.pop(); }; });
       if ($('btn-next-force')) $('btn-next-force').onclick = () => { if (confirm(`${view.starterName}(진 사람) 대신 시작할까요?`)) doStart(); };
       if ($('btn-settings')) $('btn-settings').onclick = () => { inSettings = true; render(); };
       if ($('btn-rebuy')) $('btn-rebuy').onclick = doRebuy;
@@ -1104,7 +1162,8 @@
     $('result-body').innerHTML = boardRow + rows;
     let acts = '';
     const iStart = view.starter ? view.starter === myId : role === 'host';
-    if (iStart) acts += `<button class="btn primary" id="res-next">다음 판 시작${view.starter ? ' — 진 사람이 시작' : ''}</button>`;
+    if (view.nextGame) acts += `<div class="result-note">🎴 다음 판은 ${esc(view.nextGameLabel)} — 같은 방·같은 돈으로 이동해요</div>`;
+    if (iStart) acts += `<button class="btn primary" id="res-next">다음 판 시작${view.nextGame ? ` (${esc(view.nextGameLabel)})` : ''}${view.starter ? ' — 진 사람이 시작' : ''}</button>`;
     else acts += `<div class="result-note">${view.starter ? `${esc(view.starterName)}(진 사람)이` : '방장이'} 다음 판을 시작하면 이어져요</div>`;
     if (me && me.canRebuy) acts += `<button class="btn" id="res-rebuy">${won(view.settings.startChips)}으로 다시 참가</button>`;
     acts += `<button class="btn ghost" id="res-close">닫고 테이블 보기</button>`;
@@ -1161,7 +1220,7 @@
     if (role === 'client' && view && view.phase === 'betting' && !confirm('판 진행 중이에요. 나가면 폴드 처리돼요.')) return;
     goHome('');
   }
-  window.addEventListener('beforeunload', e => { if (role === 'host' && view && view.players.length > 1) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', e => { if (!switching && role === 'host' && view && view.players.length > 1) { e.preventDefault(); e.returnValue = ''; } });
 
   /* ── 입력 바인딩 ── */
   const nameIn = $('in-name'), codeIn = $('in-code');
@@ -1215,7 +1274,7 @@
   codeIn.addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-join').click(); });
   nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') (codeIn.value ? $('btn-join') : $('btn-create')).click(); });
   $('btn-connect-cancel').onclick = () => goHome('');
-  $('btn-start').onclick = doStart;
+  $('btn-start').onclick = () => { if (role === 'host' && view && view.starter && view.starter !== myId && !confirm(`${view.starterName}(진 사람) 대신 시작할까요?`)) return; doStart(); };
   $('btn-addbot').onclick = addBot;
   $('btn-leave-lobby').onclick = () => { if (inSettings) { inSettings = false; render(); } else leave(); };
   $('btn-leave').onclick = leave;
@@ -1251,5 +1310,7 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && view) keepAwake(); });
   { const st = $('screen-table'); st.addEventListener('scroll', () => { if (st.scrollLeft || st.scrollTop) { st.scrollLeft = 0; st.scrollTop = 0; } }); }
 
-  if (params.get('room')) nameIn.focus();
+  if (!resumeSwitch() && params.get('room')) nameIn.focus();
+  /* 종목 변경으로 넘어오면 아직 화면을 누른 적이 없어 소리가 막혀 있다 → 첫 터치에 풀기 */
+  document.addEventListener('pointerdown', () => { Bgm.unlock(); Snd.unlock(); }, { passive: true });
 })();
