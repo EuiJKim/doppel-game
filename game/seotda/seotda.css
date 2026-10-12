@@ -212,9 +212,9 @@ input:focus { border-color: var(--accent); }
 .mode-tag { font-size: 12px; font-weight: 800; color: var(--ink); background: rgba(184, 38, 43, 0.55); border-radius: 8px; padding: 3px 9px; }
 .top-right { display: flex; gap: 2px; }
 .top-mid { display: flex; align-items: center; gap: 8px; }
-.top-seg { width: 150px; }
+.top-seg { width: 200px; }
 .top-seg button { padding: 5px 2px; font-size: 11px; }
-@media (max-width: 480px) { .mode-tag { display: none; } .top-seg { width: 132px; } .top-left { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw; } .topbar { gap: 4px; } .top-right { gap: 0; } .top-right .icon-btn { padding: 6px 3px; } }
+@media (max-width: 480px) { .mode-tag { display: none; } .top-seg { width: 168px; } .top-seg button { font-size: 10px; letter-spacing: -0.03em; } .top-left { max-width: 24vw !important; } .top-left { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw; } .topbar { gap: 4px; } .top-right { gap: 0; } .top-right .icon-btn { padding: 6px 3px; } }
 
 .felt {
   margin: 6px 10px 0; flex: 1; min-height: 0; display: flex; flex-direction: column;

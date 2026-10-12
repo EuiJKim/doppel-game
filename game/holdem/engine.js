@@ -15,6 +15,7 @@
   const DEFAULTS = { bb: BB, startChips: START_CHIPS, turnSec: 30, maxPlayers: 8 };
   const ACTION_LABEL = { check: '체크', call: '콜', bet: '벳', raise: '레이즈', allin: '올인', fold: '폴드' };
   const STREETS = ['프리플롭', '플롭', '턴', '리버'];
+  const SEOTDA_MODES = { '2': '2장 섯다', '3': '3장 섯다', 'holdem': '홀덤 섯다' };
   const CHIP_UNIT = 10;
 
   class Game {
@@ -29,6 +30,8 @@
       this.handNo = 0;
       this.log = [];
       this.loser = null;          // 직전 판에 가장 많이 잃은 사람 — 다음 판을 시작할 권한
+      this.nextGame = null;       // '2' | '3' | 'holdem' 이면 다음 판 시작 때 같은 방·같은 돈으로 섯다(그 모드)로 넘어간다
+      this.carried = false;       // 다른 종목에서 넘어온 판
       this.history = [];
       this.lastDealerSeat = null;
       this.version = 0;
@@ -39,7 +42,7 @@
     snapshot(hostId) {
       const h = this.hand;
       return {
-        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, loser: this.loser,
+        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, loser: this.loser, nextGame: this.nextGame, carried: this.carried,
         players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats, bot: !!p.bot })),
         refund: h && this.inProgress() ? { ...h.contrib } : null,
         history: this.history.slice(-30), log: this.log.slice(-40),
@@ -48,7 +51,7 @@
     static restore(snap, newHostId, rng) {
       const g = new Game(snap.settings, rng);
       g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId || !!p.bot }));
-      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.loser = snap.loser || null;
+      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.loser = snap.loser || null; g.nextGame = snap.nextGame || null; g.carried = !!snap.carried;
       g.history = snap.history || []; g.log = snap.log || [];
       g.phase = 'lobby';
       const oldHost = g.players.find(p => p.id === snap.hostId);
@@ -74,7 +77,7 @@
       const s = { ...this.settings, ...patch };
       s.startChips = clampStart(s.startChips);
       s.bb = clampBB(s.bb);
-      if (s.startChips !== this.settings.startChips && this.handNo === 0) for (const p of this.players) p.chips = s.startChips;
+      if (s.startChips !== this.settings.startChips && this.handNo === 0 && !this.carried) for (const p of this.players) p.chips = s.startChips;
       s.turnSec = Math.min(180, Math.max(0, Math.floor(s.turnSec) || 0));
       s.maxPlayers = Math.min(9, Math.max(2, Math.floor(s.maxPlayers) || 8));
       this.settings = s;
@@ -159,6 +162,32 @@
     /* 다음 판을 시작하는 사람: 진 사람(접속 중이면). 없으면 방장(null) */
     starter() { const p = this.loser && this.player(this.loser); return p && p.connected && !p.away ? p.id : null; }
     startBy(id) { if (this.starter() !== id) return false; return this.startHand(); }
+    /* ── 종목 변경 (텍사스 홀덤 ↔ 섯다): 예약은 언제든, 이동은 판과 판 사이에 ── */
+    setNextGame(g) {
+      const next = SEOTDA_MODES[g] ? g : null;
+      if (next === this.nextGame) return true;
+      this.nextGame = next;
+      this._log(next ? `다음 판부터 ${SEOTDA_MODES[next]} — 같은 방·같은 돈으로 이동` : '종목 변경 취소 — 다음 판도 텍사스 홀덤');
+      this._touch(); return true;
+    }
+    canSwitch() { return !this.inProgress(); }
+    transferOut() {
+      const s = this.settings;
+      return {
+        mode: this.nextGame, startChips: s.startChips, turnSec: s.turnSec, maxPlayers: s.maxPlayers, loser: this.starter(),
+        players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: !!p.away, bot: !!p.bot, stats: p.stats })),
+      };
+    }
+    static fromTransfer(t, hostId, rng) {
+      const g = new Game({ startChips: t.startChips, turnSec: t.turnSec, maxPlayers: Math.min(9, Math.max(2, t.maxPlayers || 8)) }, rng);
+      g.players = (t.players || []).map(p => ({
+        id: p.id, name: p.name, avatar: p.avatar || '', chips: Math.max(0, Math.floor(p.chips) || 0), seat: p.seat, connected: p.id === hostId || !!p.bot,
+        rebuys: p.rebuys || 0, away: !!p.away, bot: !!p.bot, stats: { ...newStats(), ...(p.stats || {}), best: null },   // 최고 족보는 종목마다 따로
+      }));
+      g.loser = t.loser || null; g.carried = true;
+      g._log('섯다 → 텍사스 홀덤으로 종목 변경 — 돈은 그대로');
+      return g;
+    }
 
     /* ── 판 시작: 딜러 버튼 이동 → 블라인드 → 2장씩 → 프리플롭 베팅 ── */
     startHand() {
@@ -431,6 +460,7 @@
         players, actions: this.actionsFor(forId),
         lastAction: h && h.actions.length ? { ...h.actions[h.actions.length - 1], n: h.actions.length } : null,
         canExtend: this.canExtend(forId), history: this.history.slice(-12),
+        nextGame: this.nextGame, nextGameLabel: this.nextGame ? SEOTDA_MODES[this.nextGame] : '텍사스 홀덤', canSwitch: this.canSwitch(),
         canStart: this.canStart(), starter: this.starter(), starterName: this.starter() ? this.player(this.starter()).name : null, spectating: spectator,
         result: isResult ? h.result : null,
         log: this.log.slice(-30),

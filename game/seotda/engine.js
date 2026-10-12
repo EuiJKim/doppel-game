@@ -33,6 +33,8 @@
       this.log = [];
       this.picker = null; this.picked = null;
       this.loser = null;          // 직전 판에 가장 많이 잃은 사람 — 다음 판을 시작할 권한
+      this.nextGame = null;       // 'texas' 면 다음 판 시작 때 같은 방·같은 돈으로 텍사스 홀덤으로 넘어간다
+      this.carried = false;       // 다른 종목에서 넘어온 판 — 첫 판 전 시작 돈 변경이 모두의 돈을 덮어쓰지 않게
       this.history = [];
       this.lastDealerSeat = null;
       this.version = 0;
@@ -44,7 +46,7 @@
     snapshot(hostId) {
       const h = this.hand;
       return {
-        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, picker: this.picker, loser: this.loser,
+        v: 1, hostId, settings: this.settings, handNo: this.handNo, lastDealerSeat: this.lastDealerSeat, picker: this.picker, loser: this.loser, nextGame: this.nextGame, carried: this.carried,
         players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: p.away, stats: p.stats, bot: !!p.bot })),
         refund: h && this.inProgress() ? { ...h.contrib, __carry: h.carry } : null,
         carry: h && this.phase === 'result' && h.result && h.result.redeal ? h.pot : 0,
@@ -54,7 +56,7 @@
     static restore(snap, newHostId, rng) {
       const g = new Game(snap.settings, rng);
       g.players = (snap.players || []).map(p => ({ ...p, away: !!p.away, stats: p.stats || newStats(), connected: p.id === newHostId || !!p.bot }));   // 봇은 새 방장이 계속 돌린다
-      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.picker = snap.picker || null; g.loser = snap.loser || null;
+      g.handNo = snap.handNo || 0; g.lastDealerSeat = snap.lastDealerSeat ?? null; g.picker = snap.picker || null; g.loser = snap.loser || null; g.nextGame = snap.nextGame || null; g.carried = !!snap.carried;
       g.history = snap.history || []; g.log = snap.log || [];
       g.phase = 'lobby';
       const oldHost = g.players.find(p => p.id === snap.hostId);
@@ -80,11 +82,16 @@
       /* 모드는 다음 판부터 적용되므로 판 중에도 바꿀 수 있다. 나머지는 판이 끝난 뒤에만 */
       const onlyMode = Object.keys(patch).every(k => k === 'mode');
       if (this.inProgress() && !onlyMode) return false;
+      if (patch.mode === 'texas') {                                    // 종목 변경 예약 (판 중에도 가능, 다음 판 시작 때 이동)
+        if (this.nextGame !== 'texas') { this.nextGame = 'texas'; this._log('다음 판부터 텍사스 홀덤 — 같은 방·같은 돈으로 이동'); this._touch(); }
+        return true;
+      }
+      if (MODES[patch.mode] && this.nextGame) { this.nextGame = null; this._log(`종목 변경 취소 — 다음 판도 섯다(${MODES[patch.mode].label})`); }
       const s = { ...this.settings, ...patch };
       s.ante = ANTE;                                                   // 판돈은 고정
       s.startChips = clampStart(s.startChips);
       /* 시작금 변경: 아직 한 판도 안 했으면 모두의 돈을 새 시작금으로 맞춘다. 게임 중이면 새로 오는 사람·재참가부터 적용 */
-      if (s.startChips !== this.settings.startChips && this.handNo === 0) for (const p of this.players) p.chips = s.startChips;
+      if (s.startChips !== this.settings.startChips && this.handNo === 0 && !this.carried) for (const p of this.players) p.chips = s.startChips;
       if (!MODES[s.mode]) s.mode = this.settings.mode;
       s.maxRaises = Math.min(10, Math.max(0, Math.floor(s.maxRaises) || 0));
       s.turnSec = Math.min(180, Math.max(0, Math.floor(s.turnSec) || 0));
@@ -176,8 +183,10 @@
     }
     /* 진 사람의 다음 게임 선택 */
     pickMode(id, mode) {
-      if (!this.settings.loserPicks || this.picker !== id || this.inProgress() || !MODES[mode]) return false;
-      if (this.settings.mode !== mode) { this.settings.mode = mode; this._log(`${this.player(id).name}(진 사람)이 다음 판을 ${MODES[mode].label}로 골랐어요`); }
+      if (!this.settings.loserPicks || this.picker !== id || this.inProgress() || !(MODES[mode] || mode === 'texas')) return false;
+      if (mode === 'texas') { this.nextGame = 'texas'; this._log(`${this.player(id).name}(진 사람)이 다음 판을 텍사스 홀덤으로 골랐어요 — 같은 방·같은 돈으로 이동`); }
+      else if (this.nextGame) { this.nextGame = null; this.settings.mode = mode; this._log(`${this.player(id).name}(진 사람)이 다음 판을 ${MODES[mode].label}로 골랐어요`); }
+      else if (this.settings.mode !== mode) { this.settings.mode = mode; this._log(`${this.player(id).name}(진 사람)이 다음 판을 ${MODES[mode].label}로 골랐어요`); }
       this.picker = null; this.picked = id;
       this._touch(); return true;
     }
@@ -186,6 +195,26 @@
     /* 다음 판을 시작하는 사람: 진 사람(접속 중이면). 없으면 방장(null) */
     starter() { const p = this.loser && this.player(this.loser); return p && p.connected && !p.away ? p.id : null; }
     startBy(id) { if (this.starter() !== id) return false; return this.startHand(); }
+    /* ── 종목 변경 (섯다 ↔ 텍사스 홀덤): 판과 판 사이에만. 재경기로 판돈이 묻혀 있으면 그 판을 먼저 끝낸다 ── */
+    canSwitch() { return !this.inProgress() && !(this.hand && this.hand.result && this.hand.result.redeal) && !this.pendingCarry; }
+    transferOut() {
+      const s = this.settings;
+      return {
+        startChips: s.startChips, turnSec: s.turnSec, maxPlayers: s.maxPlayers, loser: this.starter(),
+        players: this.players.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, chips: p.chips, seat: p.seat, connected: p.connected, rebuys: p.rebuys, away: !!p.away, bot: !!p.bot, stats: p.stats })),
+      };
+    }
+    static fromTransfer(t, hostId, rng) {
+      const mode = MODES[t.mode] ? t.mode : '2';
+      const g = new Game({ startChips: t.startChips, turnSec: t.turnSec, maxPlayers: Math.min(8, Math.max(2, t.maxPlayers || 6)), mode }, rng);
+      g.players = (t.players || []).map(p => ({
+        id: p.id, name: p.name, avatar: p.avatar || '', chips: Math.max(0, Math.floor(p.chips) || 0), seat: p.seat, connected: p.id === hostId || !!p.bot,
+        rebuys: p.rebuys || 0, away: !!p.away, bot: !!p.bot, stats: { ...newStats(), ...(p.stats || {}), best: null },   // 최고 족보는 종목마다 따로
+      }));
+      g.loser = t.loser || null; g.carried = true;
+      g._log(`텍사스 홀덤 → 섯다(${MODES[mode].label})로 종목 변경 — 돈은 그대로`);
+      return g;
+    }
 
     /* ── 판 시작 ── */
     startHand() {
@@ -532,7 +561,7 @@
       const me = players.find(p => p.id === forId);
       return {
         v: this.version, phase: this.phase, settings: s, handNo: this.handNo, me: forId,
-        mode: h ? h.mode : s.mode, modeLabel: MODES[h ? h.mode : s.mode].label, nextMode: s.mode, nextModeLabel: MODES[s.mode].label,
+        mode: h ? h.mode : s.mode, modeLabel: MODES[h ? h.mode : s.mode].label, nextMode: this.nextGame || s.mode, nextModeLabel: this.nextGame ? '텍사스 홀덤' : MODES[s.mode].label, nextGame: this.nextGame, canSwitch: this.canSwitch(),
         pot: h ? h.pot : 0, street: h ? h.street : 0, stageLabel: h ? h.stageLabel : '', curBet: h ? h.curBet : 0, raises: h ? h.raises : 0,
         board: h ? h.board.map((c, i) => (i < h.boardHidden && !spectator ? null : c)) : [], boardMax: MODES[h ? h.mode : s.mode].board,
         spectating: spectator,

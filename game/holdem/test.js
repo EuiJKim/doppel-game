@@ -264,4 +264,28 @@ t('진 사람이 다음 판을 시작한다 · 진 사람이 나가면 방장(nu
   assert(g.startBy('p1')); assert.equal(g.phase, 'betting'); assert.equal(g.loser, null);
 });
 
+console.log('종목 변경 (섯다 ↔ 텍사스 홀덤)');
+const SE = require('../seotda/engine.js');
+t('섯다 → 홀덤 → 섯다: 돈·자리·충전·봇·진 사람이 그대로 오간다', () => {
+  const s = new SE.Game({ turnSec: 0 }, seeded(3));
+  ['a', 'b', 'c'].forEach((nm, i) => s.addPlayer('p' + i, nm));
+  s.addPlayer('bot_1', '봇', 'dog', true);
+  s.player('p1').chips = 7777; s.player('p2').rebuys = 1; s.loser = 'p1';
+  s.updateSettings({ mode: 'texas' });
+  const h = Game.fromTransfer({ ...s.transferOut() }, 'p0');
+  assert.equal(h.player('p1').chips, 7777); assert.equal(h.player('p2').rebuys, 1);
+  assert(h.player('bot_1').bot && h.player('bot_1').connected); assert(!h.player('p1').connected);
+  h.addPlayer('p1', 'b'); h.addPlayer('p2', 'c');
+  assert.equal(h.starter(), 'p1');
+  assert(h.startBy('p1')); h.act(h.hand.turn, 'fold');
+  while (h.phase === 'betting') h.act(h.hand.turn, h.actionsFor(h.hand.turn).some(a => a.type === 'check') ? 'check' : 'fold');
+  const sum = h.players.reduce((a, p) => a + p.chips, 0);
+  assert.equal(sum, 10000 + 7777 + 10000 + 10000);
+  assert(h.setNextGame('3')); assert.equal(h.view('p0').nextGameLabel, '3장 섯다');
+  const back = SE.Game.fromTransfer(h.transferOut(), 'p0');
+  assert.equal(back.settings.mode, '3');
+  assert.equal(back.players.reduce((a, p) => a + p.chips, 0), sum);
+  assert(h.setNextGame('texas')); assert.equal(h.nextGame, null);
+});
+
 console.log(`\n${n} tests passed`);

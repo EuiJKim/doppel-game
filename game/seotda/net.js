@@ -139,6 +139,8 @@ const SeotdaNet = (() => {
       this.peer.on('open', () => this._dial());
       this.peer.on('error', err => {
         if (err && err.type === 'peer-unavailable' && this.wasOpen) { this._retry(); return; }
+        /* 종목 변경으로 넘어온 직후: 방장이 새 방을 여는 중일 수 있으니 1.5초 간격으로 다시 찾는다 */
+        if (err && err.type === 'peer-unavailable' && this.patience > 0) { this.patience--; this._status('방장이 새 테이블을 여는 중…'); setTimeout(() => this._dial(), 1500); return; }
         this.h.onError && this.h.onError(errorText(err), err);
       });
       this.peer.on('disconnected', () => { if (!this.closed) setTimeout(() => { try { this.peer.reconnect(); } catch (e) { } }, 1500); });

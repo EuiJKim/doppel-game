@@ -628,4 +628,38 @@ t('진 사람이 다음 판을 시작한다 · 진 사람이 나가면 방장(nu
   assert(g.startBy(st)); assert.equal(g.phase, 'betting'); assert.equal(g.loser, null);
 });
 
+console.log('종목 변경 (텍사스 홀덤)');
+t('텍사스 예약: 판 중에도 예약, 진 사람도 고를 수 있고, 섯다 모드를 고르면 취소', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.startHand();
+  assert(g.updateSettings({ mode: 'texas' })); assert.equal(g.nextGame, 'texas');
+  assert.equal(g.view('p0').nextModeLabel, '텍사스 홀덤'); assert.equal(g.view('p0').nextMode, 'texas');
+  assert(g.updateSettings({ mode: '3' })); assert.equal(g.nextGame, null); assert.equal(g.settings.mode, '3');
+  g.act('p1', 'die'); g.act('p2', 'die');
+  const pk = g.picker; assert(pk);
+  assert(g.pickMode(pk, 'texas')); assert.equal(g.nextGame, 'texas');
+  assert(g.canSwitch());
+});
+t('재경기로 판돈이 묻혀 있으면 아직 못 넘어간다', () => {
+  const g = mk(['a', 'b']);
+  g.startHand();
+  const h = g.hand; h.deck = [C(9, '띠'), C(4, '띠')];               // p1: 1+4(독사)… p0 2+9 → 49 아님. 직접 결과를 재경기로 만든다
+  g.act('p1', 'die');
+  assert.equal(g.phase, 'result'); assert(g.canSwitch());
+  g.hand.result.redeal = true; assert(!g.canSwitch());
+});
+t('내보내기: 돈·자리·충전·진 사람이 그대로, 시작 돈 변경이 넘어온 돈을 덮어쓰지 않는다', () => {
+  const g = mk(['a', 'b', 'c']);
+  g.player('p1').chips = 4321; g.player('p1').rebuys = 2; g.loser = 'p2';
+  const T = g.transferOut();
+  assert.equal(T.players.find(p => p.id === 'p1').chips, 4321); assert.equal(T.loser, 'p2');
+  const g2 = Game.fromTransfer({ ...T, mode: '3' }, 'p0');
+  assert.equal(g2.settings.mode, '3'); assert.equal(g2.player('p1').chips, 4321); assert.equal(g2.player('p1').rebuys, 2);
+  assert(g2.player('p0').connected); assert(!g2.player('p1').connected);
+  g2.updateSettings({ startChips: 50000 }); assert.equal(g2.player('p1').chips, 4321);
+  g2.addPlayer('p1', 'b'); g2.addPlayer('p2', 'c');                 // 같은 토큰으로 다시 붙는다
+  assert.equal(g2.starter(), 'p2');
+  assert(g2.startBy('p2')); assert.equal(g2.phase, 'betting');
+});
+
 console.log(`\n${n} tests passed`);
