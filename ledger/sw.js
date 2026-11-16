@@ -1,6 +1,6 @@
 // 가계부 서비스 워커 — 인터넷이 없어도 앱이 열리게 파일을 보관한다.
 // 온라인이면 항상 새 파일을 받아 오고(받는 김에 보관본도 갱신), 느리거나 끊기면 보관본으로 연다.
-const CACHE = 'ledger-v1';
+const CACHE = 'ledger-v2';
 const SHELL = [
   './',
   'index.html',
@@ -8,6 +8,8 @@ const SHELL = [
   'app.js',
   'store.js',
   'logic.js',
+  'sync.js',
+  'config.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

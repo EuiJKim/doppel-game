@@ -63,17 +63,28 @@ export function createStore(storage = globalThis.localStorage) {
     data = empty();
   }
   const listeners = new Set();
+  const changeListeners = new Set();
 
-  function commit() {
+  // touched: 이 기기에서 바꾼 기록의 키('tx:아이디' 등) 목록. null 이면 전부.
+  // 다른 기기에서 받아 온 변경(applyRemote)은 touched 없이 저장한다 — 다시 올릴 필요가 없으므로.
+  function commit(touched) {
     let ok = true;
     try {
       storage.setItem(KEY, JSON.stringify(data));
     } catch {
       ok = false; // 저장 공간 부족 등 — 화면에는 반영하고 호출자가 알린다
     }
+    if (touched !== undefined) for (const fn of changeListeners) fn(touched);
     for (const fn of listeners) fn(ok);
     return ok;
   }
+
+  const LISTS = { tx: 'txs', cat: 'cats', rule: 'rules' };
+  const validRemote = {
+    tx: (t) => Number.isFinite(t.amount) && /^\d{4}-\d{2}-\d{2}$/.test(t.date || '') && (t.type === 'income' || t.type === 'expense'),
+    cat: (c) => typeof c.name === 'string' && (c.type === 'income' || c.type === 'expense'),
+    rule: (r) => Number.isFinite(r.amount) && Number.isFinite(r.day) && typeof r.startYm === 'string',
+  };
 
   const upsert = (list, rec) => {
     const i = list.findIndex((r) => r.id === rec.id);
@@ -117,7 +128,7 @@ export function createStore(storage = globalThis.localStorage) {
       const prev = id ? data.txs.find((t) => t.id === id) : null;
       const rec = { ...(prev || { id: id || newId(), createdAt: now }), ...rest, deleted: false, updatedAt: now };
       upsert(data.txs, rec);
-      commit();
+      commit([`tx:${rec.id}`]);
       return rec;
     },
     deleteTx(id) {
@@ -125,14 +136,14 @@ export function createStore(storage = globalThis.localStorage) {
       if (!t) return;
       t.deleted = true;
       t.updatedAt = Date.now();
-      commit();
+      commit([`tx:${id}`]);
     },
     restoreTx(id) {
       const t = data.txs.find((x) => x.id === id);
       if (!t) return;
       t.deleted = false;
       t.updatedAt = Date.now();
-      commit();
+      commit([`tx:${id}`]);
     },
 
     saveCat(fields) {
@@ -142,7 +153,7 @@ export function createStore(storage = globalThis.localStorage) {
       const order = prev ? prev.order : Math.max(0, ...data.cats.filter((c) => c.type === rest.type && c.order < 99).map((c) => c.order)) + 1;
       const rec = { ...(prev || { id: id || newId(), order }), ...rest, deleted: false, updatedAt: now };
       upsert(data.cats, rec);
-      commit();
+      commit([`cat:${rec.id}`]);
       return rec;
     },
     deleteCat(id) {
@@ -150,7 +161,7 @@ export function createStore(storage = globalThis.localStorage) {
       if (!c) return;
       c.deleted = true;
       c.updatedAt = Date.now();
-      commit();
+      commit([`cat:${id}`]);
     },
 
     saveRule(fields) {
@@ -159,7 +170,7 @@ export function createStore(storage = globalThis.localStorage) {
       const prev = id ? data.rules.find((r) => r.id === id) : null;
       const rec = { ...(prev || { id: id || newId(), createdAt: now, active: true }), ...rest, deleted: false, updatedAt: now };
       upsert(data.rules, rec);
-      commit();
+      commit([`rule:${rec.id}`]);
       return rec;
     },
     deleteRule(id) {
@@ -167,12 +178,12 @@ export function createStore(storage = globalThis.localStorage) {
       if (!r) return;
       r.deleted = true;
       r.updatedAt = Date.now();
-      commit();
+      commit([`rule:${id}`]);
     },
 
     setBudget(n) {
       data.settings = { ...data.settings, budget: Math.max(0, Math.round(n) || 0), updatedAt: Date.now() };
-      commit();
+      commit(['set:main']);
     },
 
     // 도래한 고정 내역을 기록한다. 만든 건수를 돌려준다
@@ -182,7 +193,7 @@ export function createStore(storage = globalThis.localStorage) {
       if (!due.length) return 0;
       const now = Date.now();
       for (const t of due) data.txs.push({ ...t, createdAt: now, updatedAt: now });
-      commit();
+      commit(due.map((t) => `tx:${t.id}`));
       return due.length;
     },
 
@@ -201,12 +212,67 @@ export function createStore(storage = globalThis.localStorage) {
         rules: mergeRecords(data.rules, inc.rules),
         settings: (inc.settings.updatedAt || 0) > (data.settings.updatedAt || 0) ? inc.settings : data.settings,
       };
-      commit();
+      commit(null);
       return inc.txs.filter((t) => !before.has(t.id) && !t.deleted).length;
     },
     clearAll() {
       data = empty();
-      commit();
+      commit(null);
+    },
+
+    // ── 동기화용 ──
+    onLocalChange(fn) {
+      changeListeners.add(fn);
+      return () => changeListeners.delete(fn);
+    },
+    // 이 기기의 모든 기록 키
+    keys() {
+      return [
+        ...data.txs.map((r) => `tx:${r.id}`),
+        ...data.cats.map((r) => `cat:${r.id}`),
+        ...data.rules.map((r) => `rule:${r.id}`),
+        'set:main',
+      ];
+    },
+    record(key) {
+      const i = key.indexOf(':');
+      const kind = key.slice(0, i);
+      const id = key.slice(i + 1);
+      if (kind === 'set') return { id: 'main', budget: data.settings.budget || 0, updatedAt: data.settings.updatedAt || 0 };
+      return data[LISTS[kind]]?.find((r) => r.id === id) || null;
+    },
+    // 다른 기기의 기록을 합친다: 같은 기록은 늦게 고친 쪽이 이긴다.
+    // localNewer = 이 기기 쪽이 더 최신이라 다시 올려야 하는 키, remoteNewer = 받아들인 키
+    applyRemote(items) {
+      const localNewer = [];
+      const remoteNewer = [];
+      const index = {};
+      for (const { kind, rec } of items) {
+        if (!rec || typeof rec !== 'object') continue;
+        if (kind === 'set') {
+          const mine = data.settings.updatedAt || 0;
+          const theirs = rec.updatedAt || 0;
+          if (theirs > mine) {
+            data.settings = { budget: Math.max(0, Math.round(rec.budget) || 0), updatedAt: theirs };
+            remoteNewer.push('set:main');
+          } else if (mine > theirs) localNewer.push('set:main');
+          continue;
+        }
+        const list = data[LISTS[kind]];
+        if (!list || typeof rec.id !== 'string' || !validRemote[kind](rec)) continue;
+        index[kind] ||= new Map(list.map((r, i) => [r.id, i]));
+        const at = index[kind].get(rec.id);
+        const key = `${kind}:${rec.id}`;
+        if (at === undefined) {
+          index[kind].set(rec.id, list.push(rec) - 1);
+          remoteNewer.push(key);
+        } else if ((rec.updatedAt || 0) > (list[at].updatedAt || 0)) {
+          list[at] = rec;
+          remoteNewer.push(key);
+        } else if ((list[at].updatedAt || 0) > (rec.updatedAt || 0)) localNewer.push(key);
+      }
+      if (remoteNewer.length) commit();
+      return { localNewer, remoteNewer };
     },
     get firstMonth() {
       const live = data.txs.filter((t) => !t.deleted);

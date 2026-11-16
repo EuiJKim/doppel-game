@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 가계부 기록: h/{보관함 주소}/r/{기록}
+    // 보관함 주소(32자)는 가족 코드에서만 계산할 수 있고, 내용(c)은 가족 코드로 암호화되어 있다.
+    // 보관함 목록 조회와 삭제는 허용하지 않는다.
+    match /h/{hid}/r/{rid} {
+      allow read: if hid.size() == 32;
+      allow create, update: if hid.size() == 32
+        && request.resource.data.keys().hasOnly(['c', 's'])
+        && request.resource.data.keys().hasAll(['c', 's'])
+        && request.resource.data.c is string
+        && request.resource.data.c.size() < 6000
+        && request.resource.data.s == request.time;
+    }
+  }
+}

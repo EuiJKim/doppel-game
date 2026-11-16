@@ -134,6 +134,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .soft-btn { height: 40px; padding: 0 16px; border-radius: 12px; background: var(--accent-weak); color: var(--accent-text); font-weight: 700; font-size: 14px; white-space: nowrap; }
 .soft-btn.wide { width: 100%; height: 44px; margin-top: 8px; }
 .soft-btn:active, .chip:active { filter: brightness(0.96); }
+.badge.on { background: var(--accent-weak); color: var(--accent-text); }
+.btn-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
+.btn-pair .soft-btn { padding: 0 8px; }
+.code-box { text-align: center; font-size: 19px; font-weight: 700; letter-spacing: 0.04em; background: var(--fill); border-radius: 14px; padding: 18px 8px; font-variant-numeric: tabular-nums; user-select: all; -webkit-user-select: all; overflow-wrap: anywhere; }
+.field input.code-input { text-align: center; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.field input.code-input::placeholder { font-weight: 400; letter-spacing: 0; }
 .badge { font-size: 12px; font-weight: 600; color: var(--ink2); background: var(--fill); border-radius: 8px; padding: 3px 8px; }
 
 /* ── 내역 줄 ── */
@@ -346,4 +352,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
 }
 #toast.show { opacity: 1; transform: none; pointer-events: auto; }
+/* 시트가 열려 있을 때는 버튼을 가리지 않게 위쪽에 띄운다 */
+body.sheet-open #toast { bottom: auto; top: calc(12px + env(safe-area-inset-top)); }
 #toast button { color: #86b6ef; font-weight: 700; white-space: nowrap; min-height: 28px; }
