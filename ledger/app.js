@@ -125,17 +125,8 @@ function viewHome() {
   const m = monthLabel(state.ym);
   const recent = L.byDay(txs).flatMap((g) => g.items).slice(0, 5);
 
-  let hero;
-  if (!b) {
-    hero = `
-      <section class="card hero">
-        <p class="label">${m} 남은 돈 <span class="muted">수입 − 지출 − 저축</span></p>
-        <p class="big${left.total < 0 ? ' neg' : ''}">${won(left.total)}</p>
-        ${leftRows(left, m)}
-        <button class="soft-btn" data-act="budget">월 예산 정하기</button>
-        <p class="note">예산을 정하면 하루에 쓸 수 있는 돈을 알려드려요.</p>
-      </section>`;
-  } else {
+  let hero = '';
+  if (b) {
     const pct = Math.round((b.spent / b.budget) * 100);
     let label = `${m} 남은 예산`;
     let note = '';
@@ -170,17 +161,9 @@ function viewHome() {
   const showInstall = !isStandalone() && !ui.installHidden;
   return `
     ${hero}
-    <section class="tiles">
-      <div class="card tile"><p class="label">수입</p><p class="tile-val income">+${won(sum.income)}</p></div>
-      <div class="card tile"><p class="label">지출</p><p class="tile-val">${won(sum.expense)}</p></div>
-    </section>
-    ${b ? `
-    <section class="card left">
-      <div class="card-head"><h2>${m} 남은 돈</h2><span class="muted small">수입 − 지출 − 저축</span></div>
-      <p class="left-val${left.total < 0 ? ' neg' : ''}">${won(left.total)}</p>
-      ${leftRows(left, m)}
-    </section>` : ''}
+    ${monthCard(sum, left, m)}
     ${savingCard(sum.saving, m)}
+    ${setupCard(!b, !store.saveGoal && !sum.saving && !L.savedTotal(store.txs))}
     <section class="card">
       <div class="card-head"><h2>최근 내역</h2>${recent.length ? '<button class="link-btn" data-act="go-list">전체 보기</button>' : ''}</div>
       ${recent.length ? `<div class="rows">${recent.map((t) => txRow(t, { showDate: true })).join('')}</div>` : emptyBox(`${m} 내역이 아직 없어요`, '아래 ＋ 버튼으로 첫 내역을 기록해 보세요.')}
@@ -193,34 +176,44 @@ function viewHome() {
     </section>` : ''}`;
 }
 
-// 남은 돈이 어떻게 나왔는지: 지난달에서 넘어온 돈 + 이번 달에 남은 돈. 앞선 달 기록이 없으면 보여 줄 것이 없다
-function leftRows(left, m) {
-  if (!left.hasPrior) return '';
-  const row = (name, v) => `<p><span>${name}</span><b class="${v < 0 ? 'neg' : ''}">${won(v)}</b></p>`;
-  return `<div class="kv">${row('지난달에서 넘어온 돈', left.carry)}${row(`${m}에 남은 돈`, left.month)}</div>`;
+// 이번 달 정리: 수입 − 지출 − 저축, 거기에 지난달에서 넘어온 돈을 더한 것이 남은 돈 (영수증처럼 한 장에)
+const signed = (n) => (n < 0 ? `−${won(-n)}` : won(Math.abs(n))); // abs: -0 이 '-0원'으로 찍히지 않게
+function monthCard(sum, left, m) {
+  const row = (name, cls, text) => `<p><span>${name}</span><b class="${cls}">${text}</b></p>`;
+  return `
+    <section class="card month">
+      <div class="card-head"><h2>${m} 정리</h2></div>
+      <div class="kv">
+        ${row('수입', 'income', `+${won(sum.income)}`)}
+        ${row('지출', '', signed(-sum.expense))}
+        ${row('저축', 'saving', signed(-sum.saving))}
+        ${left.hasPrior ? row('지난달에서 넘어온 돈', left.carry < 0 ? 'neg' : '', signed(left.carry)) : ''}
+      </div>
+      <p class="total"><span>남은 돈</span><b class="${left.total < 0 ? 'neg' : ''}">${signed(left.total)}</b></p>
+    </section>`;
 }
 
-// 저축: 이번 달에 모은 돈과 목표. 저축한 적도 목표도 없으면 목표를 정하는 한 줄만 보여 준다
+// 저축 목표와 얼마나 모았는지. 저축한 적도 목표도 없으면 보여 주지 않는다 (아래 '정하기' 줄로 대신한다)
 function savingCard(saved, m) {
   const total = L.savedTotal(store.txs);
   const s = L.savingStatus({ goal: store.saveGoal, saved });
-  if (!s && !total) {
-    return `
-    <section class="card slim">
-      <button class="set-row" data-act="goal"><span>한 달 저축 목표</span><span class="set-val go">정하기</span></button>
-    </section>`;
-  }
+  if (!s && !total) return '';
   const pct = s ? Math.round((saved / s.goal) * 100) : 0;
-  const note = s ? (s.done ? `${m} 목표를 채웠어요.` : `목표까지 <b>${won(s.left)}</b> 남았어요.`) : '';
   return `
     <section class="card savings">
       <div class="card-head"><h2>${m} 저축</h2><button class="link-btn" data-act="goal">${s ? `목표 ${won(s.goal)}` : '목표 정하기'}</button></div>
-      <p class="save-val">${won(saved)}</p>
       ${s ? `<div class="meter" role="meter" aria-label="저축 목표 달성률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(pct, 100)}"><i style="width:${(s.ratio * 100).toFixed(1)}%"></i></div>
-      <div class="meter-foot"><span>${pct}% 모음</span><span>지금까지 저축 ${won(total)}</span></div>` : `<p class="note">지금까지 저축 ${won(total)}</p>`}
-      ${note ? `<p class="note">${note}</p>` : ''}
+      <div class="meter-foot"><span>${won(saved)} 모음 (${pct}%)</span><span>${s.done ? '목표를 채웠어요' : `${won(s.left)} 남음`}</span></div>` : ''}
+      <p class="note">지금까지 저축 ${won(total)}</p>
       <button class="soft-btn wide" data-act="add-saving">저축 적기</button>
     </section>`;
+}
+
+// 아직 정하지 않은 것(월 예산 · 저축 목표)을 한 줄씩 권한다
+function setupCard(needBudget, needGoal) {
+  if (!needBudget && !needGoal) return '';
+  const row = (act, name) => `<button class="set-row" data-act="${act}"><span>${name}</span><span class="set-val go">정하기</span></button>`;
+  return `<section class="card slim">${needBudget ? row('budget', '월 예산') : ''}${needGoal ? row('goal', '한 달 저축 목표') : ''}</section>`;
 }
 
 // ── 내역 ──
