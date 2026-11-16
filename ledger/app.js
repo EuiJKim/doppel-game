@@ -381,7 +381,6 @@ function trendChart(rows, key, word) {
 // ── 설정 ──
 function viewSettings() {
   const rules = store.rules.slice().sort((a, b) => a.day - b.day);
-  const catChips = (type) => store.cats(type).map((c) => `<button class="cat-chip" data-act="cat-edit" data-id="${esc(c.id)}"><span aria-hidden="true">${esc(c.emoji)}</span>${esc(c.name)}</button>`).join('');
   return `
     <section class="card">
       <div class="card-head"><h2>예산</h2></div>
@@ -403,10 +402,9 @@ function viewSettings() {
     </section>
 
     <section class="card">
-      <div class="card-head"><h2>지출 카테고리</h2><button class="link-btn" data-act="cat-add" data-type="expense">추가</button></div>
-      <div class="chips">${catChips('expense')}</div>
-      <div class="card-head gap"><h2>수입 카테고리</h2><button class="link-btn" data-act="cat-add" data-type="income">추가</button></div>
-      <div class="chips">${catChips('income')}</div>
+      <div class="card-head"><h2>카테고리</h2></div>
+      <button class="set-row" data-act="cats-open" data-type="expense"><span>지출 카테고리</span><span class="set-val">${store.cats('expense').length}개</span></button>
+      <button class="set-row" data-act="cats-open" data-type="income"><span>수입 카테고리</span><span class="set-val">${store.cats('income').length}개</span></button>
     </section>
 
     ${syncCard()}
@@ -541,6 +539,7 @@ function closeDialog(answer, fromPop = false) {
 function sheetHtml() {
   if (sheet.kind === 'entry') return entryHtml();
   if (sheet.kind === 'cat') return catHtml();
+  if (sheet.kind === 'cats') return catsHtml();
   if (sheet.kind === 'code') return codeHtml();
   if (sheet.kind === 'join') return joinHtml();
   if (sheet.kind === 'name') return nameHtml();
@@ -599,7 +598,11 @@ function entryHtml() {
       ${e.mode === 'rule' ? '<p class="sheet-hint">매달 정한 날에 자동으로 기록돼요.</p>' : ''}
       ${e.mode === 'budget' ? '<p class="sheet-hint">한 달에 쓸 돈을 정해 두면 남은 예산을 알려드려요.</p>' : ''}
       <div class="amount" id="e-amount" aria-live="polite"></div>
-      ${e.mode === 'budget' ? '' : '<div class="cats" id="e-cats" role="group" aria-label="카테고리"></div>'}
+      ${e.mode === 'budget' ? '' : `
+      <div class="cats-wrap">
+        <div class="cats" id="e-cats" role="group" aria-label="카테고리"></div>
+        <span class="cats-more" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+      </div>`}
       ${fields}
       <div class="quick">${quick.map(([n, t]) => `<button data-act="e-add" data-n="${n}">${t}</button>`).join('')}</div>
       <div class="keypad">${keys.map((k) => k === 'back'
@@ -620,6 +623,12 @@ function paintAmount() {
   if ($('#e-more')) $('#e-more').disabled = n <= 0;
 }
 
+// 카테고리가 아래로 더 있으면(스크롤해야 보이면) 아래쪽에 흐림과 화살표를 보여 준다
+function paintCatsMore() {
+  const box = $('#e-cats');
+  if (box) box.parentElement.classList.toggle('more', box.scrollTop + box.clientHeight < box.scrollHeight - 6);
+}
+
 function paintCats() {
   const box = $('#e-cats');
   if (!box) return;
@@ -627,6 +636,7 @@ function paintCats() {
     <button class="cat${c.id === sheet.cat ? ' on' : ''}" data-act="e-cat" data-id="${esc(c.id)}" aria-pressed="${c.id === sheet.cat}">
       <span class="cat-emo" aria-hidden="true">${esc(c.emoji)}</span><span class="cat-name">${esc(c.name)}</span>
     </button>`).join('');
+  paintCatsMore();
 }
 
 function entryKey(k) {
@@ -705,6 +715,24 @@ async function entryDelete() {
 // ── 카테고리 시트 ──
 const EMOJIS = ['🍚', '🍜', '🍺', '☕', '🛒', '🚌', '🚗', '⛽', '🏠', '📱', '💡', '🧴', '🛍️', '👕', '💄', '💊', '🏋️', '🎬', '🎮', '✈️', '📚', '👶', '🐶', '🎁', '💸', '🏦', '💳', '💰', '🧧', '💵', '📈', '💬'];
 
+// 카테고리 목록 (설정에서 연다). 누르면 편집, 편집이 끝나면 이 목록으로 돌아온다
+function catsHtml() {
+  const type = sheet.type;
+  const chips = store.cats(type).map((c) => `<button class="cat-chip" data-act="cat-edit" data-id="${esc(c.id)}"><span aria-hidden="true">${esc(c.emoji)}</span>${esc(c.name)}</button>`).join('');
+  return `
+    <div class="backdrop" data-act="close"></div>
+    <section class="sheet form" role="dialog" aria-modal="true" aria-label="${type === 'income' ? '수입' : '지출'} 카테고리" tabindex="-1">
+      <header class="sheet-head">
+        <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
+        <h2>${type === 'income' ? '수입' : '지출'} 카테고리</h2>
+        <button class="text-btn go" data-act="cat-add" data-type="${type}">추가</button>
+      </header>
+      <p class="muted small">눌러서 이름과 아이콘을 바꿀 수 있어요.</p>
+      <div class="chips">${chips}</div>
+      <button class="primary" data-act="close">완료</button>
+    </section>`;
+}
+
 function catHtml() {
   const c = sheet;
   const canDelete = c.id && store.cats(c.type).length > 1;
@@ -712,8 +740,8 @@ function catHtml() {
     <div class="backdrop" data-act="close"></div>
     <section class="sheet form" role="dialog" aria-modal="true" aria-label="카테고리" tabindex="-1">
       <header class="sheet-head">
-        <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
-        <h2>${c.type === 'income' ? '수입' : '지출'} 카테고리</h2>
+        <button class="icon-btn" data-act="cat-back" aria-label="목록으로"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
+        <h2>${c.id ? '카테고리 수정' : '새 카테고리'}</h2>
         ${canDelete ? '<button class="text-btn danger" data-act="c-delete">삭제</button>' : '<span class="head-pad"></span>'}
       </header>
       <label class="field"><span>이름</span><input type="text" id="c-name" value="${esc(c.name)}" maxlength="8" placeholder="예: 반려동물" autocomplete="off" enterkeyhint="done"></label>
@@ -727,16 +755,17 @@ function catHtml() {
 function catSave() {
   const name = $('#c-name').value.trim();
   if (!name) return toast('이름을 적어 주세요');
-  store.saveCat({ id: sheet.id || undefined, type: sheet.type, name, emoji: sheet.emoji });
-  closeSheet();
+  const type = sheet.type;
+  store.saveCat({ id: sheet.id || undefined, type, name, emoji: sheet.emoji });
+  openSheet({ kind: 'cats', type });
   toast('저장했어요');
 }
 
 async function catDelete() {
-  const id = sheet.id;
+  const { id, type } = sheet;
   if (!(await ask({ title: '이 카테고리를 지울까요?', body: '이미 기록된 내역에는 이름이 그대로 남아요.', ok: '지우기', danger: true }))) return;
   store.deleteCat(id);
-  closeSheet();
+  openSheet({ kind: 'cats', type });
   toast('카테고리를 지웠어요');
 }
 
@@ -1027,6 +1056,8 @@ const actions = {
     const c = store.cat(el.dataset.id);
     openSheet({ kind: 'cat', id: c.id, type: c.type, name: c.name, emoji: c.emoji });
   },
+  'cats-open': (el) => openSheet({ kind: 'cats', type: el.dataset.type }),
+  'cat-back': () => openSheet({ kind: 'cats', type: sheet.type }),
   'c-emoji': (el) => {
     sheet.emoji = el.dataset.e;
     for (const b of document.querySelectorAll('[data-act="c-emoji"]')) {
@@ -1112,11 +1143,20 @@ document.addEventListener('keydown', (ev) => {
 
 // 글자를 치는 동안에는 숫자판을 접어 화면 키보드에 자리를 내준다
 document.addEventListener('focusin', (ev) => {
-  if (ev.target.matches?.('.sheet input[type="text"]')) $('#sheet .sheet')?.classList.add('typing');
+  if (!ev.target.matches?.('.sheet input[type="text"]')) return;
+  $('#sheet .sheet')?.classList.add('typing');
+  paintCatsMore();
 });
 document.addEventListener('focusout', (ev) => {
-  if (ev.target.matches?.('.sheet input[type="text"]')) $('#sheet .sheet')?.classList.remove('typing');
+  if (!ev.target.matches?.('.sheet input[type="text"]')) return;
+  $('#sheet .sheet')?.classList.remove('typing');
+  paintCatsMore();
 });
+// scroll 은 위로 전달되지 않아서 capture 로 받는다
+document.addEventListener('scroll', (ev) => {
+  if (ev.target.id === 'e-cats') paintCatsMore();
+}, true);
+window.addEventListener('resize', paintCatsMore);
 
 // 찾는 말을 칠 때마다 결과만 다시 그린다
 document.addEventListener('input', (ev) => {
