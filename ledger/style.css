@@ -121,6 +121,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .label { font-size: calc(13px * var(--fs)); color: var(--ink2); display: flex; align-items: center; gap: 6px; }
 .muted { color: var(--ink3); }
 .small { font-size: calc(12.5px * var(--fs)); }
+.warn { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--accent-weak); color: var(--ink); line-height: 1.5; }
 .center { text-align: center; }
 .pad { padding: 10px 0 14px; }
 .pad-b { padding-bottom: 6px; }

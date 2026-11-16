@@ -14,6 +14,8 @@ const SCHEMA = 2;
 const PAGE = 300;
 const BATCH = 200;
 const MAX_DOC = 6000; // firestore.rules 의 크기 제한과 같아야 한다
+const SOON = 200; // 적은 뒤 올리기까지 기다리는 시간(ms). 길면 그 사이에 앱을 닫아 다른 기기에 늦게 보인다
+const KEEPALIVE_MAX = 60000; // 화면을 떠나도 끝까지 보내 주는 요청(keepalive)의 크기 한도는 64KB
 
 function checkChars(body) {
   let h = 7;
@@ -119,13 +121,15 @@ export function createSync({ store, config, storage = globalThis.localStorage, f
   const docsBase = `projects/${config?.projectId}/databases/(default)/documents`;
   const url = (path) => `${config.endpoint}/${docsBase}${path}${config.apiKey ? `?key=${encodeURIComponent(config.apiKey)}` : ''}`;
 
-  async function post(path, body) {
+  async function post(path, body, { keepalive = false } = {}) {
     let res;
     try {
+      const text = JSON.stringify(body);
       res = await fetchFn(url(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: text,
+        keepalive: keepalive && text.length < KEEPALIVE_MAX,
         signal: globalThis.AbortSignal?.timeout ? AbortSignal.timeout(20000) : undefined,
       });
     } catch {
@@ -196,14 +200,20 @@ export function createSync({ store, config, storage = globalThis.localStorage, f
           updateTransforms: [{ fieldPath: 's', setToServerValue: 'REQUEST_TIME' }],
         });
       }
-      if (writes.length) await post(':commit', { writes });
+      if (writes.length) await post(':commit', { writes }, { keepalive: true }); // 앱을 닫는 중이어도 끝까지 올라가게
       // 올리는 사이에 또 고쳤으면 그대로 두어 다음에 다시 올린다
       for (const [key, at] of sent) if ((store.record(key)?.updatedAt || 0) === at) dirty.delete(key);
     }
   }
 
-  async function cycle({ initial = false, mustExist = false } = {}) {
+  // pushFirst: 화면을 떠나는 중이라 시간이 없을 때 — 받기 전에 먼저 올린다.
+  // (그 사이 다른 기기가 같은 기록을 더 늦게 고쳤다면 그 기기가 다시 올려 맞춰진다)
+  async function cycle({ initial = false, mustExist = false, pushFirst = false } = {}) {
     keys ||= await deriveKeys(st.code);
+    if (pushFirst) {
+      await push(keys);
+      persist();
+    }
     const seen = initial ? new Set() : null;
     await pull(keys, seen);
     if (initial) {
@@ -215,8 +225,9 @@ export function createSync({ store, config, storage = globalThis.localStorage, f
   }
 
   // 한 번에 하나만 돈다. 도는 중에 또 요청이 오면 끝난 뒤 한 번 더 돈다
-  function run() {
+  function run({ pushFirst = false } = {}) {
     if (!st.code || !configured || !supported) return Promise.resolve();
+    clearTimeout(timer);
     if (running) {
       again = true;
       return running;
@@ -226,7 +237,8 @@ export function createSync({ store, config, storage = globalThis.localStorage, f
       try {
         do {
           again = false;
-          await cycle();
+          await cycle({ pushFirst });
+          pushFirst = false;
           persist();
         } while (again);
         setPhase('idle');
@@ -278,7 +290,7 @@ export function createSync({ store, config, storage = globalThis.localStorage, f
     if (!st.code) return;
     for (const key of touched || store.keys()) dirty.add(key);
     persist();
-    request(1200);
+    request(SOON);
   });
 
   return {
@@ -307,7 +319,11 @@ export function createSync({ store, config, storage = globalThis.localStorage, f
       persist();
       setPhase('idle');
     },
-    syncNow: run,
+    syncNow: () => run(),
     request,
+    // 화면을 떠날 때 부른다: 아직 올리지 못한 기록이 있으면 기다리지 않고 바로 올린다
+    flush() {
+      return dirty.size ? run({ pushFirst: true }) : Promise.resolve();
+    },
   };
 }
