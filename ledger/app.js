@@ -1,8 +1,11 @@
 // 가계부 화면
 import * as L from './logic.js';
 import { createStore } from './store.js';
+import { createSync, formatCode } from './sync.js';
+import { SYNC } from './config.js';
 
 const store = createStore();
+const sync = createSync({ store, config: SYNC });
 const $ = (sel, el = document) => el.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
@@ -314,10 +317,7 @@ function viewSettings() {
       <div class="chips">${catChips('income')}</div>
     </section>
 
-    <section class="card">
-      <div class="card-head"><h2>가족과 같이 쓰기</h2><span class="badge">준비 중</span></div>
-      <p class="muted small">로그인해서 여러 기기·가족이 같은 가계부를 보는 기능은 다음 단계에서 붙습니다. 지금 기록은 이 기기에만 저장돼요.</p>
-    </section>
+    ${syncCard()}
 
     <section class="card">
       <div class="card-head"><h2>앱과 백업</h2></div>
@@ -326,7 +326,49 @@ function viewSettings() {
       <button class="set-row" data-act="import"><span>백업 파일 가져오기</span><span class="set-val">합치기</span></button>
       <button class="set-row danger" data-act="clear"><span>모든 기록 지우기</span></button>
     </section>
-    <p class="muted center small">가계부 · 기록은 이 기기에만 저장됩니다</p>`;
+    <p class="muted center small">${sync.status.linked ? '가계부 · 기록은 이 기기에 저장되고 가족 기기와 맞춰집니다' : '가계부 · 기록은 이 기기에만 저장됩니다'}</p>`;
+}
+
+function syncCard() {
+  const head = '<h2>가족과 같이 쓰기</h2>';
+  if (!sync.configured) {
+    return `
+    <section class="card">
+      <div class="card-head">${head}<span class="badge">준비 중</span></div>
+      <p class="muted small">여러 기기·가족이 같은 가계부를 보는 기능은 준비 중입니다. 지금 기록은 이 기기에만 저장돼요.</p>
+    </section>`;
+  }
+  if (!sync.status.linked) {
+    return `
+    <section class="card">
+      <div class="card-head">${head}</div>
+      <p class="muted small pad-b">한 폰에서 가족 코드를 만들고 다른 폰에서 그 코드를 입력하면 같은 가계부를 함께 씁니다. 로그인은 필요 없어요.</p>
+      <div class="btn-pair">
+        <button class="soft-btn" data-act="sync-create">가족 코드 만들기</button>
+        <button class="soft-btn" data-act="sync-join">코드 입력하기</button>
+      </div>
+    </section>`;
+  }
+  return `
+    <section class="card">
+      <div class="card-head">${head}<span class="badge on">연결됨</span></div>
+      <p class="muted small pad-b" id="sync-status">${esc(syncStatusText())}</p>
+      <button class="set-row" data-act="sync-code"><span>가족 코드</span><span class="set-val">보기 · 공유</span></button>
+      <button class="set-row" data-act="sync-now"><span>지금 맞추기</span></button>
+      <button class="set-row danger" data-act="sync-unlink"><span>이 기기 연결 끊기</span></button>
+    </section>`;
+}
+
+function syncStatusText() {
+  const s = sync.status;
+  if (s.phase === 'syncing') return '가족 기기와 맞추는 중…';
+  if (s.phase === 'offline') return s.pending ? `오프라인 — 연결되면 ${s.pending}건을 올려요` : '오프라인 — 연결되면 다시 맞춰요';
+  if (s.phase === 'error') return `맞추지 못했어요: ${s.error}`;
+  if (!s.lastSyncAt) return '아직 맞춘 적이 없어요';
+  const min = Math.floor((Date.now() - s.lastSyncAt) / 60000);
+  const d = new Date(s.lastSyncAt);
+  const when = min < 1 ? '방금' : min < 60 ? `${min}분 전` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${L.pad2(d.getHours())}:${L.pad2(d.getMinutes())}`;
+  return `마지막으로 맞춘 때: ${when}`;
 }
 
 // ───────── 시트(아래에서 올라오는 창) ─────────
@@ -359,6 +401,8 @@ const xIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M1
 function sheetHtml() {
   if (sheet.kind === 'entry') return entryHtml();
   if (sheet.kind === 'cat') return catHtml();
+  if (sheet.kind === 'code') return codeHtml();
+  if (sheet.kind === 'join') return joinHtml();
   return guideHtml();
 }
 
@@ -540,6 +584,91 @@ function catDelete() {
   toast('카테고리를 지웠어요');
 }
 
+// ── 가족 코드 ──
+function codeHtml() {
+  const code = formatCode(sync.status.code);
+  return `
+    <div class="backdrop" data-act="close"></div>
+    <section class="sheet form" role="dialog" aria-modal="true" aria-label="가족 코드" tabindex="-1">
+      <header class="sheet-head">
+        <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
+        <h2>가족 코드</h2><span class="head-pad"></span>
+      </header>
+      <p class="code-box" id="code-text">${esc(code)}</p>
+      <p class="muted small">다른 폰의 가계부에서 설정 → 가족과 같이 쓰기 → <b>코드 입력하기</b>에 이 코드를 넣으면 연결됩니다.</p>
+      <p class="muted small">이 코드를 아는 사람은 가계부를 보고 고칠 수 있어요. 비밀번호처럼 가족에게만 알려 주세요.</p>
+      <div class="btn-pair">
+        <button class="soft-btn" data-act="code-copy">코드 복사</button>
+        ${navigator.share ? '<button class="soft-btn" data-act="code-share">보내기</button>' : ''}
+      </div>
+      <button class="primary" data-act="close">확인</button>
+    </section>`;
+}
+
+function joinHtml() {
+  return `
+    <div class="backdrop" data-act="close"></div>
+    <section class="sheet form" role="dialog" aria-modal="true" aria-label="가족 코드 입력" tabindex="-1">
+      <header class="sheet-head">
+        <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
+        <h2>가족 코드 입력</h2><span class="head-pad"></span>
+      </header>
+      <label class="field"><span>가족에게 받은 코드 20자</span>
+        <input type="text" id="j-code" class="code-input" placeholder="ABCDE-FGHJK-LMNPQ-RSTUV" maxlength="30" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done">
+      </label>
+      <p class="muted small">연결하면 이 기기에 있던 기록도 가족 가계부에 합쳐집니다.</p>
+      <button class="primary" data-act="join-save" id="j-save">연결하기</button>
+    </section>`;
+}
+
+async function syncCreate() {
+  if (!confirm('가족 코드를 만들까요?\n이 기기의 기록이 가족 가계부에 올라갑니다.')) return;
+  toast('가족 코드를 만드는 중…');
+  try {
+    await sync.create();
+    render();
+    openSheet({ kind: 'code' });
+    toast('가족 코드를 만들었어요');
+  } catch (err) {
+    toast(err.message || '만들지 못했어요', null, 4000);
+  }
+}
+
+async function syncJoin() {
+  const btn = $('#j-save');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = '연결하는 중…';
+  try {
+    await sync.join($('#j-code').value);
+    closeSheet();
+    render();
+    toast('가족 가계부에 연결했어요');
+  } catch (err) {
+    toast(err.message || '연결하지 못했어요', null, 4000);
+    if ($('#j-save')) {
+      btn.disabled = false;
+      btn.textContent = '연결하기';
+    }
+  }
+}
+
+async function codeCopy() {
+  const text = formatCode(sync.status.code);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('코드를 복사했어요');
+  } catch {
+    // 복사가 막힌 브라우저에서는 글자를 선택해 직접 복사할 수 있게 한다
+    const range = document.createRange();
+    range.selectNodeContents($('#code-text'));
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    toast('코드를 길게 눌러 복사해 주세요');
+  }
+}
+
 // ── 설치 안내 ──
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -607,13 +736,13 @@ async function importBackup(file) {
 // ── 토스트 ──
 let toastTimer = 0;
 let toastFn = null;
-function toast(msg, action) {
+function toast(msg, action, ms) {
   const el = $('#toast');
   toastFn = action?.fn || null;
   el.innerHTML = `<span>${esc(msg)}</span>${action ? `<button data-act="toast-action">${esc(action.label)}</button>` : ''}`;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), action ? 5000 : 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms || (action ? 5000 : 2200));
 }
 
 // ───────── 이벤트 ─────────
@@ -698,9 +827,31 @@ const actions = {
   export: exportBackup,
   import: () => $('#import-file').click(),
   clear: () => {
-    if (!confirm('모든 기록을 지울까요?\n내역·예산·고정 내역·카테고리가 모두 사라지고 되돌릴 수 없어요.')) return;
+    const linked = sync.status.linked;
+    const msg = linked
+      ? '이 기기의 기록을 모두 지우고 가족 연결도 끊을까요?\n다른 기기의 기록은 그대로 남아요.'
+      : '모든 기록을 지울까요?\n내역·예산·고정 내역·카테고리가 모두 사라지고 되돌릴 수 없어요.';
+    if (!confirm(msg)) return;
+    if (linked) sync.unlink(); // 먼저 끊어야 '지움'이 다른 기기로 퍼지지 않는다
     store.clearAll();
-    toast('모든 기록을 지웠어요');
+    toast(linked ? '이 기기의 기록을 지우고 연결을 끊었어요' : '모든 기록을 지웠어요');
+  },
+  'sync-create': syncCreate,
+  'sync-join': () => openSheet({ kind: 'join' }),
+  'join-save': syncJoin,
+  'sync-code': () => openSheet({ kind: 'code' }),
+  'code-copy': codeCopy,
+  'code-share': () => navigator.share({ text: `가계부 가족 코드: ${formatCode(sync.status.code)}` }).catch(() => {}),
+  'sync-now': async () => {
+    await sync.syncNow();
+    const s = sync.status;
+    toast(s.phase === 'idle' ? '가족 기기와 맞췄어요' : syncStatusText(), null, s.phase === 'idle' ? 0 : 4000);
+  },
+  'sync-unlink': () => {
+    if (!confirm('이 기기의 가족 연결을 끊을까요?\n기록은 이 기기에 그대로 남고, 더 이상 맞춰지지 않아요.')) return;
+    sync.unlink();
+    render();
+    toast('연결을 끊었어요');
   },
   'toast-action': () => {
     toastFn?.();
@@ -729,6 +880,7 @@ document.addEventListener('keydown', (ev) => {
     actions[ev.target.dataset.act]?.(ev.target);
   }
   if (ev.key === 'Enter' && ev.target.matches?.('#e-memo, #c-name')) ev.target.blur();
+  if (ev.key === 'Enter' && ev.target.matches?.('#j-code')) syncJoin();
 });
 
 // 글자를 치는 동안에는 숫자판을 접어 화면 키보드에 자리를 내준다
@@ -779,8 +931,21 @@ function refreshDay() {
   if (!store.applyRecurring(today)) render();
 }
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !sheet) refreshDay();
+  if (document.hidden) return;
+  if (!sheet) refreshDay();
+  sync.request(0);
 });
+
+// 동기화: 열 때, 다시 볼 때, 인터넷이 돌아올 때, 그리고 보고 있는 동안 30초마다 맞춘다
+window.addEventListener('online', () => sync.request(0));
+setInterval(() => {
+  if (!document.hidden && navigator.onLine !== false) sync.request(0);
+}, 30000);
+sync.subscribe(() => {
+  const el = $('#sync-status');
+  if (el) el.textContent = syncStatusText();
+});
+sync.request(300);
 
 store.subscribe((ok) => {
   render();

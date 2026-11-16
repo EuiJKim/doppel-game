@@ -1,6 +1,9 @@
 // node ledger/test.js
 import assert from 'node:assert/strict';
 import * as L from './logic.js';
+import { createStore } from './store.js';
+import { createSync, makeCode, normalizeCode, formatCode, deriveKeys, seal, unseal, docId } from './sync.js';
+import { createFakeFirestore } from './fake-firestore.js';
 
 let n = 0;
 const test = (name, fn) => {
@@ -144,4 +147,170 @@ test('기록 합치기: 늦게 고친 쪽이 이긴다', () => {
   assert.deepEqual(m.map((r) => [r.id, r.v]), [['a', 2], ['b', 1], ['c', 2]]);
 });
 
+
+// ───────── 동기화 ─────────
+
+const atest = async (name, fn) => {
+  await fn();
+  n++;
+  console.log(`ok - ${name}`);
+};
+const memStorage = () => {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+};
+const CONFIG = { projectId: 'demo', apiKey: '', endpoint: 'https://firestore.googleapis.com/v1' };
+const device = (server, storage = memStorage()) => {
+  const store = createStore(storage);
+  const sync = createSync({ store, config: CONFIG, storage, fetch: server.fetch });
+  return { store, sync, storage };
+};
+const tick = () => new Promise((r) => setTimeout(r, 3)); // 고친 시각이 겹치지 않게
+const liveTx = (d) => d.store.txs.filter((t) => !t.deleted).map((t) => `${t.memo}:${t.amount}`).sort();
+
+await atest('가족 코드: 만들기·정리·오타 감지', async () => {
+  const code = makeCode();
+  assert.equal(code.length, 20);
+  assert.equal(normalizeCode(formatCode(code).toLowerCase()), code);
+  assert.equal(normalizeCode(` ${formatCode(code)} `), code);
+  // 한 글자만 틀려도 거의 다 걸러진다 (검사 글자 2개)
+  let caught = 0;
+  for (let i = 0; i < 20; i++) if (!normalizeCode(code.slice(0, i) + (code[i] === 'A' ? 'B' : 'A') + code.slice(i + 1))) caught++;
+  assert(caught >= 18, `오타 감지 ${caught}/20`);
+  assert.equal(normalizeCode(code.slice(1)), null);
+  assert.equal(normalizeCode('0'.repeat(20)), null); // 0 은 쓰지 않는 글자
+  assert.notEqual(makeCode(), code);
+});
+
+await atest('암호화: 같은 코드로만 풀린다', async () => {
+  const a = await deriveKeys(makeCode());
+  const b = await deriveKeys(makeCode());
+  assert.equal(a.hid.length, 32);
+  assert.notEqual(a.hid, b.hid);
+  const boxed = await seal(a.key, { k: 'tx', r: { memo: '비밀 메모' } });
+  assert.deepEqual(await unseal(a.key, boxed), { k: 'tx', r: { memo: '비밀 메모' } });
+  await assert.rejects(unseal(b.key, boxed));
+  assert.equal(docId('tx:abc_1-2'), 'tx_abc_1-2');
+  assert.equal(docId('tx:a/b'), 'tx_x612f62');
+});
+
+await atest('두 기기: 만들기 → 참여 → 서로 합쳐진다', async () => {
+  const server = createFakeFirestore();
+  const A = device(server);
+  const B = device(server);
+  A.store.saveTx({ type: 'expense', amount: 5000, cat: 'c_food', date: '2026-11-01', memo: 'A점심' });
+  A.store.setBudget(700000);
+  B.store.saveTx({ type: 'expense', amount: 3000, cat: 'c_cafe', date: '2026-11-02', memo: 'B커피' });
+
+  const code = await A.sync.create();
+  assert.equal(A.sync.status.linked, true);
+  assert.equal(A.sync.status.pending, 0);
+  await B.sync.join(formatCode(code));
+  // B 는 A 의 기록을 받고, 자기 기록을 올렸다
+  assert.deepEqual(liveTx(B), ['A점심:5000', 'B커피:3000']);
+  assert.equal(B.store.budget, 700000);
+  await A.sync.syncNow();
+  assert.deepEqual(liveTx(A), ['A점심:5000', 'B커피:3000']);
+
+  // 서버에는 암호문만 있다
+  for (const d of server.docs.values()) assert(!d.c.includes('점심') && !Buffer.from(d.c, 'base64').toString('utf8').includes('점심'));
+});
+
+await atest('두 기기: 수정은 늦게 고친 쪽, 삭제도 전달', async () => {
+  const server = createFakeFirestore();
+  const A = device(server);
+  const B = device(server);
+  const t = A.store.saveTx({ type: 'expense', amount: 1000, cat: 'c_food', date: '2026-11-01', memo: '원본' });
+  await B.sync.join(await A.sync.create());
+
+  await tick();
+  A.store.saveTx({ id: t.id, amount: 2000, memo: 'A가 고침' });
+  await tick();
+  B.store.saveTx({ id: t.id, amount: 3000, memo: 'B가 나중에 고침' });
+  // 늦게 고친 B 가 먼저 올리고, 일찍 고친 A 가 나중에 올려 서버를 덮어써도 결국 B 것으로 모인다
+  await B.sync.syncNow();
+  await A.sync.syncNow();
+  assert.deepEqual(liveTx(A), ['B가 나중에 고침:3000']);
+  await B.sync.syncNow();
+  await A.sync.syncNow();
+  await B.sync.syncNow();
+  assert.deepEqual(liveTx(A), ['B가 나중에 고침:3000']);
+  assert.deepEqual(liveTx(B), ['B가 나중에 고침:3000']);
+  assert.equal(A.sync.status.pending + B.sync.status.pending, 0);
+
+  await tick();
+  A.store.deleteTx(t.id);
+  await A.sync.syncNow();
+  await B.sync.syncNow();
+  assert.deepEqual(liveTx(B), []);
+});
+
+await atest('참여: 없는 코드·틀린 코드는 연결하지 않는다', async () => {
+  const server = createFakeFirestore();
+  const B = device(server);
+  B.store.saveTx({ type: 'expense', amount: 1, cat: 'c_food', date: '2026-11-01', memo: 'x' });
+  await assert.rejects(B.sync.join(makeCode()), (e) => e.kind === 'notfound');
+  await assert.rejects(B.sync.join('AAAAA-BBBBB-CCCCC-DDDDD'), (e) => e.kind === 'badcode');
+  assert.equal(B.sync.status.linked, false);
+  assert.equal(B.storage.getItem('ledger.sync'), null);
+  assert.equal(server.docs.size, 0); // 아무것도 올리지 않았다
+});
+
+await atest('오프라인: 기록은 쌓아 두었다가 연결되면 올린다', async () => {
+  const server = createFakeFirestore();
+  const A = device(server);
+  const B = device(server);
+  await B.sync.join(await A.sync.create());
+  server.state.offline = true;
+  A.store.saveTx({ type: 'expense', amount: 4200, cat: 'c_food', date: '2026-11-03', memo: '오프라인' });
+  await A.sync.syncNow();
+  assert.equal(A.sync.status.phase, 'offline');
+  assert.equal(A.sync.status.pending, 1);
+
+  // 앱을 껐다 켜도 올릴 목록이 남아 있다
+  const A2 = device(server, A.storage);
+  assert.equal(A2.sync.status.linked, true);
+  assert.equal(A2.sync.status.pending, 1);
+  server.state.offline = false;
+  await A2.sync.syncNow();
+  assert.equal(A2.sync.status.phase, 'idle');
+  assert.equal(A2.sync.status.pending, 0);
+  await B.sync.syncNow();
+  assert.deepEqual(liveTx(B), ['오프라인:4200']);
+});
+
+await atest('많은 기록: 여러 번에 나눠 올리고 받는다 (같은 시각 묶음 포함)', async () => {
+  const server = createFakeFirestore();
+  const A = device(server);
+  const B = device(server);
+  for (let i = 0; i < 730; i++) A.store.saveTx({ type: 'expense', amount: i + 1, cat: 'c_food', date: '2026-10-01', memo: `m${i}` });
+  await B.sync.join(await A.sync.create());
+  assert.equal(liveTx(B).length, 730);
+  assert(server.state.commits >= 4, `나눠 올림: ${server.state.commits}`);
+  // 다시 맞춰도 새로 받을 것이 없다
+  const before = server.state.commits;
+  await A.sync.syncNow();
+  await B.sync.syncNow();
+  assert.equal(server.state.commits, before);
+});
+
+await atest('연결 끊기: 기록은 남고 더 올리지 않는다. 서버 거부는 오류로 표시', async () => {
+  const server = createFakeFirestore();
+  const A = device(server);
+  await A.sync.create();
+  server.state.deny = true;
+  A.store.saveTx({ type: 'expense', amount: 10, cat: 'c_food', date: '2026-11-01', memo: 'x' });
+  await A.sync.syncNow();
+  assert.equal(A.sync.status.phase, 'error');
+  server.state.deny = false;
+  A.sync.unlink();
+  assert.equal(A.sync.status.linked, false);
+  const count = server.docs.size;
+  A.store.saveTx({ type: 'expense', amount: 20, cat: 'c_food', date: '2026-11-01', memo: 'y' });
+  await A.sync.syncNow();
+  assert.equal(server.docs.size, count);
+  assert.equal(liveTx(A).length, 2);
+});
+
 console.log(`\n${n}개 통과`);
+process.exit(0); // 예약된 동기화 타이머를 기다리지 않는다
