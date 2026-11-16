@@ -12,7 +12,7 @@ const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 const MAX_AMOUNT = 999999999;
 
 const UI_KEY = 'ledger.ui';
-const ui = { listMode: 'cal', lastCat: {}, installHidden: false, me: '', ...readJson(UI_KEY) }; // me: 이 기기에서 적은 내역에 붙는 이름
+const ui = { listMode: 'cal', lastCat: {}, installHidden: false, me: '', fontScale: 1, ...readJson(UI_KEY) }; // me: 이 기기에서 적은 내역에 붙는 이름
 const saveUi = () => {
   try {
     localStorage.setItem(UI_KEY, JSON.stringify(ui));
@@ -27,7 +27,7 @@ function readJson(key) {
 }
 
 let today = L.dateStr();
-const state = { tab: 'home', ym: L.monthOf(today), day: today, statsType: 'expense' };
+const state = { tab: 'home', ym: L.monthOf(today), day: today, statsType: 'expense', finding: false, q: '', filterCat: null, allTime: false };
 
 const won = L.formatWon;
 const monthLabel = (ym) => `${Number(ym.slice(5, 7))}월`;
@@ -45,7 +45,23 @@ function render() {
     else b.removeAttribute('aria-current');
   }
   renderTop();
+  const typing = document.activeElement?.id === 'q'; // 찾는 중에 다시 그려져도 입력을 이어갈 수 있게
   $('#view').innerHTML = { home: viewHome, list: viewList, stats: viewStats, settings: viewSettings }[state.tab]();
+  if (typing) focusFind();
+}
+
+function focusFind() {
+  const q = $('#q');
+  if (!q) return;
+  q.focus({ preventScroll: true });
+  q.setSelectionRange(q.value.length, q.value.length);
+}
+
+const FONT_SCALES = [[1, '보통'], [1.12, '크게'], [1.25, '아주 크게']];
+function applyFontScale() {
+  const fs = FONT_SCALES.some(([v]) => v === ui.fontScale) ? ui.fontScale : 1;
+  document.documentElement.style.setProperty('--fs', fs);
+  document.documentElement.classList.toggle('fs-big', fs > 1); // 큰 글자에서는 카테고리를 한 줄에 4개씩
 }
 
 function renderTop() {
@@ -164,21 +180,40 @@ function viewHome() {
 
 // ── 내역 ──
 function viewList() {
-  const txs = L.monthTx(store.txs, state.ym);
-  const sum = L.summarize(txs);
-  const groups = L.byDay(txs);
-  const head = `
-    <div class="list-head">
-      <div class="seg" role="group" aria-label="보기 방식">
-        <button data-act="list-mode" data-mode="cal" class="${ui.listMode === 'cal' ? 'on' : ''}" aria-pressed="${ui.listMode === 'cal'}">달력</button>
-        <button data-act="list-mode" data-mode="list" class="${ui.listMode === 'list' ? 'on' : ''}" aria-pressed="${ui.listMode === 'list'}">목록</button>
+  const searchIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>';
+  let head;
+  if (state.finding) {
+    const c = state.filterCat ? store.cat(state.filterCat) : null;
+    head = `
+      <div class="find-bar">
+        <input type="search" id="q" value="${esc(state.q)}" placeholder="메모·카테고리·금액으로 찾기" aria-label="내역 찾기" autocomplete="off" enterkeyhint="search">
+        <button class="text-btn" data-act="find-close">닫기</button>
       </div>
-      <p class="sum-line"><span>수입 <b class="income">+${won(sum.income)}</b></span><span>지출 <b>${won(sum.expense)}</b></span></p>
-    </div>`;
+      ${c ? `<div class="find-chips"><button class="chip" data-act="filter-clear" aria-label="${esc(c.name)} 거르기 해제"><span aria-hidden="true">${esc(c.emoji)}</span> ${esc(c.name)} <span aria-hidden="true">✕</span></button></div>` : ''}`;
+  } else {
+    const sum = L.summarize(L.monthTx(store.txs, state.ym));
+    head = `
+      <div class="list-head">
+        <div class="seg" role="group" aria-label="보기 방식">
+          <button data-act="list-mode" data-mode="cal" class="${ui.listMode === 'cal' ? 'on' : ''}" aria-pressed="${ui.listMode === 'cal'}">달력</button>
+          <button data-act="list-mode" data-mode="list" class="${ui.listMode === 'list' ? 'on' : ''}" aria-pressed="${ui.listMode === 'list'}">목록</button>
+        </div>
+        <p class="sum-line"><span>수입 <b class="income">+${won(sum.income)}</b></span><span>지출 <b>${won(sum.expense)}</b></span></p>
+        <button class="icon-btn" data-act="find-open" aria-label="내역 찾기">${searchIcon}</button>
+      </div>`;
+  }
+  return `${head}<div class="list-body" id="list-body">${listBody()}</div>`;
+}
+
+// 내역 화면의 본문. 찾는 중에는 글자를 칠 때마다 이 부분만 다시 그린다 (입력창이 유지되도록)
+function listBody() {
+  if (state.finding) return findBody();
+  const txs = L.monthTx(store.txs, state.ym);
+  const groups = L.byDay(txs);
 
   if (ui.listMode === 'list') {
-    if (!groups.length) return head + `<section class="card">${emptyBox(`${monthLabel(state.ym)} 내역이 없어요`, '아래 ＋ 버튼으로 기록해 보세요.')}</section>`;
-    return head + groups.map((g) => `
+    if (!groups.length) return `<section class="card">${emptyBox(`${monthLabel(state.ym)} 내역이 없어요`, '아래 ＋ 버튼으로 기록해 보세요.')}</section>`;
+    return groups.map((g) => `
       <section class="card">
         <div class="day-head"><h2>${Number(g.date.slice(8, 10))}일 ${WEEK[L.weekdayOf(g.date)]}요일</h2><span>${dayTotals(g)}</span></div>
         <div class="rows">${g.items.map((t) => txRow(t)).join('')}</div>
@@ -186,6 +221,7 @@ function viewList() {
   }
 
   const map = new Map(groups.map((g) => [g.date, g]));
+  const tight = (ui.fontScale || 1) > 1;
   const cells = [];
   for (let i = 0; i < L.firstWeekday(state.ym); i++) cells.push('<span class="day blank"></span>');
   for (let d = 1; d <= L.daysInMonth(state.ym); d++) {
@@ -197,8 +233,8 @@ function viewList() {
     cells.push(`
       <button class="${cls}" data-act="day" data-date="${date}" aria-label="${aria}" aria-pressed="${date === state.day}">
         <i>${d}</i>
-        ${g && g.income ? `<em class="in">+${L.compactNum(g.income)}</em>` : ''}
-        ${g && g.expense ? `<em>${L.compactNum(g.expense)}</em>` : ''}
+        ${g && g.income ? `<em class="in">+${L.calNum(g.income, tight)}</em>` : ''}
+        ${g && g.expense ? `<em>${L.calNum(g.expense, tight)}</em>` : ''}
       </button>`);
   }
   const sel = state.day && state.day.startsWith(state.ym) ? state.day : null;
@@ -210,12 +246,44 @@ function viewList() {
       <button class="soft-btn wide" data-act="add" data-date="${sel}">이 날 내역 추가</button>
     </section>` : '<p class="muted center">날짜를 누르면 그날 내역이 보여요.</p>';
 
-  return `${head}
+  return `
     <section class="card cal">
       <div class="cal-week" aria-hidden="true">${WEEK.map((w, i) => `<span class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</span>`).join('')}</div>
       <div class="cal-grid">${cells.join('')}</div>
     </section>
     ${panel}`;
+}
+
+// 찾은 내역. 기본은 보고 있는 달 안에서, '전체 기간'을 누르면 모든 달에서 찾는다
+const FIND_MAX = 300;
+function findBody() {
+  const base = state.allTime ? store.txs : L.monthTx(store.txs, state.ym);
+  const found = L.filterTx(base, { q: state.q, cat: state.filterCat }, (id) => store.cat(id).name);
+  const sum = L.summarize(found);
+  const m = monthLabel(state.ym);
+  const parts = [`${state.allTime ? '전체 기간' : m} ${found.length}건`, sum.expense ? `지출 ${won(sum.expense)}` : '', sum.income ? `수입 +${won(sum.income)}` : ''].filter(Boolean);
+  const line = `
+    <div class="find-sum">
+      <span>${parts.join(' · ')}</span>
+      <button class="link-btn" data-act="find-scope">${state.allTime ? `${m}만 보기` : '전체 기간에서 찾기'}</button>
+    </div>`;
+  if (!found.length) return `${line}<section class="card">${emptyBox('찾는 내역이 없어요', state.allTime ? '다른 말로 찾아보세요.' : '전체 기간에서 찾아볼 수 있어요.')}</section>`;
+  let left = FIND_MAX;
+  const cards = [];
+  for (const g of L.byDay(found)) {
+    if (left <= 0) break;
+    const items = g.items.slice(0, left);
+    left -= items.length;
+    const [y, mo, d] = g.date.split('-').map(Number);
+    const title = state.allTime ? `${y}년 ${mo}월 ${d}일 ${WEEK[L.weekdayOf(g.date)]}요일` : `${d}일 ${WEEK[L.weekdayOf(g.date)]}요일`;
+    cards.push(`
+      <section class="card">
+        <div class="day-head"><h2>${title}</h2><span>${dayTotals(g)}</span></div>
+        <div class="rows">${items.map((t) => txRow(t)).join('')}</div>
+      </section>`);
+  }
+  const more = found.length > FIND_MAX ? `<p class="muted center small">최근 ${FIND_MAX}건까지 보여요. 검색어를 더 적어 좁혀 보세요.</p>` : '';
+  return line + cards.join('') + more;
 }
 
 function dayTotals(g) {
@@ -244,13 +312,13 @@ function viewStats() {
     <ol class="crows">${rows.map((r) => {
       const c = store.cat(r.cat);
       return `
-      <li class="crow">
+      <li><button class="crow" data-act="cat-drill" data-cat="${esc(r.cat)}" aria-label="${esc(c.name)} ${Math.round(r.share * 100)}%, ${won(r.total)}. 내역 보기">
         <span class="emo" aria-hidden="true">${esc(c.emoji)}</span>
-        <div class="crow-main">
-          <div class="crow-top"><b>${esc(c.name)}</b><span class="pct">${Math.round(r.share * 100)}%</span><span class="amt">${won(r.total)}</span></div>
-          <div class="bar"><i style="width:${Math.max((r.total / top) * 100, 1.5).toFixed(1)}%"></i></div>
-        </div>
-      </li>`;
+        <span class="crow-main">
+          <span class="crow-top"><b>${esc(c.name)}</b><span class="pct">${Math.round(r.share * 100)}%</span><span class="amt">${won(r.total)}</span></span>
+          <span class="bar"><i style="width:${Math.max((r.total / top) * 100, 1.5).toFixed(1)}%"></i></span>
+        </span>
+      </button></li>`;
     }).join('')}</ol>` : emptyBox(`${m} ${word} 내역이 없어요`, '기록이 쌓이면 어디에 많이 썼는지 보여드려요.');
 
   // 추이는 보통 '이번 달까지 6개월'. 더 옛날/앞날을 보고 있으면 그 달이 들어오게 옮긴다
@@ -271,7 +339,7 @@ function viewStats() {
       ${cmpLine ? `<p class="note">${cmpLine}</p>` : ''}
     </section>
     <section class="card">
-      <div class="card-head"><h2>카테고리별 ${word}</h2></div>
+      <div class="card-head"><h2>카테고리별 ${word}</h2>${rows.length ? '<span class="muted small">누르면 내역 보기</span>' : ''}</div>
       ${catList}
     </section>
     <section class="card">
@@ -342,6 +410,13 @@ function viewSettings() {
     </section>
 
     ${syncCard()}
+
+    <section class="card">
+      <div class="card-head"><h2>화면</h2></div>
+      <div class="set-row static"><span>글자 크기</span>
+        <div class="seg" role="group" aria-label="글자 크기">${FONT_SCALES.map(([v, name]) => `<button data-act="font-scale" data-v="${v}" class="${ui.fontScale === v ? 'on' : ''}" aria-pressed="${ui.fontScale === v}">${name}</button>`).join('')}</div>
+      </div>
+    </section>
 
     <section class="card">
       <div class="card-head"><h2>앱과 백업</h2></div>
@@ -530,7 +605,9 @@ function entryHtml() {
       <div class="keypad">${keys.map((k) => k === 'back'
         ? '<button data-act="e-key" data-k="back" aria-label="지우기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5-6zM12 10l4 4M16 10l-4 4"/></svg></button>'
         : `<button data-act="e-key" data-k="${k}">${k}</button>`).join('')}</div>
-      <button class="primary" data-act="e-save" id="e-save">저장</button>
+      ${e.mode === 'tx' && !e.id
+        ? '<div class="save-row"><button class="soft-btn" data-act="e-save-more" id="e-more">저장하고 계속</button><button class="primary" data-act="e-save" id="e-save">저장</button></div>'
+        : '<button class="primary" data-act="e-save" id="e-save">저장</button>'}
     </section>`;
 }
 
@@ -540,6 +617,7 @@ function paintAmount() {
     <p class="amount-num${n ? '' : ' zero'}"><span>${L.formatNum(n)}</span>원</p>
     <p class="amount-read">${L.koreanAmount(n) || '&nbsp;'}</p>`;
   $('#e-save').disabled = n <= 0;
+  if ($('#e-more')) $('#e-more').disabled = n <= 0;
 }
 
 function paintCats() {
@@ -559,7 +637,7 @@ function entryKey(k) {
   paintAmount();
 }
 
-function entrySave() {
+function entrySave(keepOpen = false) {
   const e = sheet;
   const amount = Number(e.amount || 0);
   if (amount <= 0) return;
@@ -591,6 +669,15 @@ function entrySave() {
   // 방금 적은 내역이 보이도록 그 달·그 날로 맞춘다
   state.ym = L.monthOf(date);
   state.day = date;
+  if (keepOpen) {
+    // 종류·카테고리·날짜는 그대로 두고 금액과 메모만 비운다 (영수증 여러 장을 이어 적을 때)
+    e.amount = '';
+    e.memo = '';
+    $('#e-memo').value = '';
+    paintAmount();
+    render();
+    return toast(`${won(amount)} 기록했어요. 이어서 적어 주세요`);
+  }
   closeSheet();
   render();
   toast(e.id ? '고쳤어요' : '기록했어요');
@@ -902,7 +989,38 @@ const actions = {
     sheet.amount = String(Math.min(Number(sheet.amount || 0) + Number(el.dataset.n), MAX_AMOUNT));
     paintAmount();
   },
-  'e-save': entrySave,
+  'e-save': () => entrySave(),
+  'e-save-more': () => entrySave(true),
+  'find-open': () => {
+    state.finding = true;
+    render();
+    focusFind();
+  },
+  'find-close': () => {
+    Object.assign(state, { finding: false, q: '', filterCat: null, allTime: false });
+    render();
+  },
+  'filter-clear': () => {
+    state.filterCat = null;
+    render();
+  },
+  'find-scope': () => {
+    state.allTime = !state.allTime;
+    render();
+    $('#view').scrollTop = 0;
+  },
+  // 통계에서 카테고리를 누르면 그 달 그 카테고리 내역을 보여 준다
+  'cat-drill': (el) => {
+    Object.assign(state, { tab: 'list', finding: true, q: '', filterCat: el.dataset.cat, allTime: false });
+    render();
+    $('#view').scrollTop = 0;
+  },
+  'font-scale': (el) => {
+    ui.fontScale = Number(el.dataset.v);
+    saveUi();
+    applyFontScale();
+    render();
+  },
   'e-delete': entryDelete,
   'cat-add': (el) => openSheet({ kind: 'cat', id: null, type: el.dataset.type, name: '', emoji: el.dataset.type === 'income' ? '💵' : '💸' }),
   'cat-edit': (el) => {
@@ -983,6 +1101,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && dialog) return closeDialog(false);
   if (ev.key === 'Escape' && sheet) return closeSheet();
   if (ev.key === 'Enter' && ev.target.matches?.('#n-name')) return nameSave();
+  if (ev.key === 'Enter' && ev.target.matches?.('#q')) return ev.target.blur(); // 화면 키보드를 내린다
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('g[data-act]')) {
     ev.preventDefault();
     actions[ev.target.dataset.act]?.(ev.target);
@@ -997,6 +1116,13 @@ document.addEventListener('focusin', (ev) => {
 });
 document.addEventListener('focusout', (ev) => {
   if (ev.target.matches?.('.sheet input[type="text"]')) $('#sheet .sheet')?.classList.remove('typing');
+});
+
+// 찾는 말을 칠 때마다 결과만 다시 그린다
+document.addEventListener('input', (ev) => {
+  if (ev.target.id !== 'q') return;
+  state.q = ev.target.value;
+  $('#list-body').innerHTML = listBody();
 });
 
 $('#import-file').addEventListener('change', (ev) => {
@@ -1063,6 +1189,34 @@ sync.subscribe(() => {
   renderTop();
 });
 
+// 옆으로 밀어서 달 넘기기 (왼쪽으로 밀면 다음 달). 화면 가장자리에서 시작한 것은 기기의 뒤로 가기 동작이라 무시한다
+(() => {
+  const view = $('#view');
+  let from = null;
+  view.addEventListener('touchstart', (ev) => {
+    const t = ev.touches[0];
+    const ok = ev.touches.length === 1 && state.tab !== 'settings' && !sheet && !dialog && t.clientX > 24 && t.clientX < window.innerWidth - 24 && !ev.target.closest('input');
+    from = ok ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+  }, { passive: true });
+  view.addEventListener('touchend', (ev) => {
+    if (!from) return;
+    const t = ev.changedTouches[0];
+    const dx = t.clientX - from.x;
+    const dy = t.clientY - from.y;
+    const quick = Date.now() - from.at < 700;
+    from = null;
+    if (!quick || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    const dir = dx < 0 ? 1 : -1;
+    setMonth(L.addMonths(state.ym, dir));
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      view.animate([{ transform: `translateX(${dir * 28}px)`, opacity: 0.3 }, { transform: 'none', opacity: 1 }], { duration: 170, easing: 'ease-out' });
+    }
+  }, { passive: true });
+  view.addEventListener('touchcancel', () => {
+    from = null;
+  });
+})();
+
 // 당겨서 맞추기: 맨 위에서 아래로 당겼다 놓으면 가족 기기와 맞춘다 (연결된 경우만)
 (() => {
   const view = $('#view');
@@ -1108,6 +1262,7 @@ store.subscribe((ok) => {
   if (!ok) toast('저장 공간이 부족해 기록을 저장하지 못했어요');
 });
 
+applyFontScale();
 if (history.state?.sheet) history.replaceState(null, ''); // 새로 고침으로 남은 시트 흔적 정리
 refreshDay();
 

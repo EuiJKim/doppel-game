@@ -195,6 +195,26 @@ export function compactNum(n) {
   return n.toLocaleString('ko-KR');
 }
 
+// 달력 칸용: 칸이 좁으니 10만 이상은 '12.3만'처럼 줄인다. tight(큰 글자)면 1만부터 줄인다
+export function calNum(n, tight = false) {
+  n = Math.round(n);
+  if (n < (tight ? 10000 : 100000)) return n.toLocaleString('ko-KR');
+  const cut = (v) => (v >= 100 ? String(Math.floor(v)) : String(Math.floor(v * 10) / 10));
+  return n >= 100000000 ? `${cut(n / 100000000)}억` : `${cut(n / 10000)}만`;
+}
+
+// 내역 찾기. 검색어(띄어 쓰면 모두 포함)는 메모·카테고리 이름·적은 사람·금액에서 찾는다
+export function filterTx(txs, { q = '', cat = null } = {}, catName = () => '') {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return txs.filter((t) => {
+    if (t.deleted) return false;
+    if (cat && t.cat !== cat) return false;
+    if (!words.length) return true;
+    const hay = `${t.memo || ''} ${catName(t.cat)} ${t.by || ''} ${t.amount} ${formatNum(t.amount)}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
 // 큰 금액을 말로 풀어 준다: 1250000 → '125만원'
 export function koreanAmount(n) {
   n = Math.round(n);
