@@ -98,6 +98,28 @@ export function budgetStatus({ budget, spent, ym, today }) {
   return { budget, spent, remaining, ratio, over, phase, daysLeft, perDay };
 }
 
+// 오늘 쓸 수 있는 돈.
+// 하루 기준액 = 오늘 쓰기 전 남은 예산 ÷ 오늘 포함 남은 날. 거기서 오늘 쓴 돈을 뺀 것이 '오늘 남은 돈'.
+// 고정 내역(월세 등)은 '오늘 쓴 돈'에 넣지 않는다 — 한 번에 나가는 큰돈 때문에 그날이 초과로 보이지 않게.
+// (고정 내역도 이번 달 예산에서는 빠지므로 하루 기준액은 그만큼 줄어든다.)
+export function todayStatus({ budget, txs, today }) {
+  if (!budget || budget <= 0) return null;
+  const ym = monthOf(today);
+  let spent = 0;
+  let spentToday = 0;
+  for (const t of txs) {
+    if (t.deleted || t.type !== 'expense' || !t.date.startsWith(ym)) continue;
+    spent += t.amount;
+    if (t.date === today && !t.ruleId) spentToday += t.amount;
+  }
+  const daysLeft = daysInMonth(ym) - Number(today.slice(8, 10)) + 1;
+  const allowance = Math.max(0, Math.floor((budget - spent + spentToday) / daysLeft));
+  const left = allowance - spentToday;
+  // 내일부터의 하루 기준액 (오늘이 말일이면 0)
+  const nextPerDay = daysLeft > 1 ? Math.max(0, Math.floor((budget - spent) / (daysLeft - 1))) : 0;
+  return { allowance, spentToday, left, over: left < 0, daysLeft, nextPerDay };
+}
+
 // 고정 지출 규칙의 그 달 날짜 (31일 규칙은 짧은 달에 말일로 당긴다)
 export function ruleDate(rule, ym) {
   return `${ym}-${pad2(Math.min(rule.day, daysInMonth(ym)))}`;

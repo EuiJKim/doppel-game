@@ -12,7 +12,7 @@ const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 const MAX_AMOUNT = 999999999;
 
 const UI_KEY = 'ledger.ui';
-const ui = { listMode: 'cal', lastCat: {}, installHidden: false, ...readJson(UI_KEY) };
+const ui = { listMode: 'cal', lastCat: {}, installHidden: false, me: '', ...readJson(UI_KEY) }; // me: 이 기기에서 적은 내역에 붙는 이름
 const saveUi = () => {
   try {
     localStorage.setItem(UI_KEY, JSON.stringify(ui));
@@ -61,12 +61,27 @@ function renderTop() {
       <h1>${y}년 ${m}월</h1>
       <button class="icon-btn" data-act="next" aria-label="다음 달"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
     </div>
-    ${state.ym !== L.monthOf(today) ? '<button class="chip" data-act="this-month">이번 달로</button>' : ''}`;
+    <div class="top-right">
+      ${state.ym !== L.monthOf(today) ? '<button class="chip" data-act="this-month">이번 달로</button>' : ''}
+      ${syncButton()}
+    </div>`;
+}
+
+// 가족과 연결되어 있으면 위쪽에 맞춤 상태를 보여 준다. 누르면 바로 맞춘다
+function syncButton() {
+  const s = sync.status;
+  if (!s.linked) return '';
+  const cls = s.phase === 'syncing' ? ' spin' : s.phase === 'error' ? ' bad' : s.phase === 'offline' ? ' off' : '';
+  return `
+    <button class="icon-btn sync-btn${cls}" data-act="sync-tap" aria-label="가족 기기와 맞추기. ${esc(syncStatusText())}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>
+      ${cls === ' bad' || cls === ' off' ? '<i class="dot"></i>' : ''}
+    </button>`;
 }
 
 function txRow(t, { showDate = false } = {}) {
   const c = store.cat(t.cat);
-  const sub = [t.memo ? c.name : '', showDate ? `${Number(t.date.slice(5, 7))}월 ${Number(t.date.slice(8, 10))}일` : '', t.ruleId ? '고정' : '']
+  const sub = [t.memo ? c.name : '', showDate ? `${Number(t.date.slice(5, 7))}월 ${Number(t.date.slice(8, 10))}일` : '', t.ruleId ? '고정' : '', t.by || '']
     .filter(Boolean)
     .join(' · ');
   return `
@@ -100,11 +115,19 @@ function viewHome() {
     const pct = Math.round((b.spent / b.budget) * 100);
     let label = `${m} 남은 예산`;
     let note = '';
+    let todayBlock = '';
     if (b.over) {
       label = `${m} 예산 초과`;
       note = `예산보다 <b>${won(-b.remaining)}</b> 더 썼어요.`;
     } else if (b.phase === 'current') {
-      note = `하루 <b>${won(b.perDay)}</b>씩 쓸 수 있어요 · ${b.daysLeft}일 남음`;
+      const t = L.todayStatus({ budget: store.budget, txs, today });
+      todayBlock = `
+        <div class="today">
+          <div><p class="label">${t.over ? '<span class="warn-ico" aria-hidden="true">!</span>오늘 초과' : '오늘 남은 돈'}</p><p class="today-val${t.over ? ' neg' : ''}">${won(Math.abs(t.left))}</p></div>
+          <div><p class="label">오늘 쓴 돈</p><p class="today-val">${won(t.spentToday)}</p></div>
+        </div>`;
+      if (!t.over) note = `하루 ${won(t.allowance)} 기준 · ${t.daysLeft}일 남음`;
+      else note = t.daysLeft > 1 ? `내일부터 하루 <b>${won(t.nextPerDay)}</b>씩 쓸 수 있어요 · ${t.daysLeft - 1}일 남음` : '이번 달 마지막 날이에요.';
     } else if (b.phase === 'past') {
       label = `${m} 남긴 예산`;
       note = '예산 안에서 잘 마무리했어요.';
@@ -115,6 +138,7 @@ function viewHome() {
         <p class="big">${won(Math.abs(b.remaining))}</p>
         <div class="meter" role="meter" aria-label="예산 사용률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(pct, 100)}"><i style="width:${(b.ratio * 100).toFixed(1)}%"></i></div>
         <div class="meter-foot"><span>${won(b.spent)} 사용 (${pct}%)</span><button class="link-btn" data-act="budget">예산 ${won(b.budget)}</button></div>
+        ${todayBlock}
         ${note ? `<p class="note">${note}</p>` : ''}
       </section>`;
   }
@@ -353,6 +377,7 @@ function syncCard() {
     <section class="card">
       <div class="card-head">${head}<span class="badge on">연결됨</span></div>
       <p class="muted small pad-b" id="sync-status">${esc(syncStatusText())}</p>
+      <button class="set-row" data-act="name-edit"><span>내 이름</span><span class="set-val">${esc(ui.me) || '정하지 않음'}</span></button>
       <button class="set-row" data-act="sync-code"><span>가족 코드</span><span class="set-val">보기 · 공유</span></button>
       <button class="set-row" data-act="sync-now"><span>지금 맞추기</span></button>
       <button class="set-row danger" data-act="sync-unlink"><span>이 기기 연결 끊기</span></button>
@@ -398,11 +423,52 @@ function closeSheet(fromPop = false) {
 
 const xIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>';
 
+// ── 확인 창: 화면 가운데에 뜨고 시트 위에도 겹쳐진다. 답(true/false)을 돌려준다 ──
+let dialog = null;
+let afterPop = null; // 우리가 부른 history.back() 이 끝난 뒤 할 일
+
+function ask({ title, body = '', ok = '확인', danger = false }) {
+  return new Promise((resolve) => {
+    dialog = { resolve };
+    $('#dialog').innerHTML = `
+      <div class="dlg-backdrop" data-act="dlg-no"></div>
+      <section class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title"${body ? ' aria-describedby="dlg-body"' : ''}>
+        <h2 id="dlg-title">${esc(title)}</h2>
+        ${body ? `<p id="dlg-body">${esc(body)}</p>` : ''}
+        <div class="dlg-btns">
+          <button class="dlg-btn" data-act="dlg-no">취소</button>
+          <button class="dlg-btn ${danger ? 'danger' : 'go'}" data-act="dlg-yes">${esc(ok)}</button>
+        </div>
+      </section>`;
+    if (!sheet) history.pushState({ dialog: true }, ''); // 시트가 없을 때도 뒤로 가기로 닫히게
+    $('#dialog .dlg-btn').focus({ preventScroll: true });
+  });
+}
+
+function closeDialog(answer, fromPop = false) {
+  if (!dialog) return;
+  const { resolve } = dialog;
+  dialog = null;
+  $('#dialog').innerHTML = '';
+  if (!fromPop && history.state?.dialog) {
+    // 뒤로 가기가 끝난 다음에 답을 돌려준다 — 그 사이에 새 시트를 열면 같이 닫혀 버리기 때문
+    const done = () => {
+      clearTimeout(timer);
+      afterPop = null;
+      resolve(answer);
+    };
+    const timer = setTimeout(done, 400);
+    afterPop = done;
+    history.back();
+  } else resolve(answer);
+}
+
 function sheetHtml() {
   if (sheet.kind === 'entry') return entryHtml();
   if (sheet.kind === 'cat') return catHtml();
   if (sheet.kind === 'code') return codeHtml();
   if (sheet.kind === 'join') return joinHtml();
+  if (sheet.kind === 'name') return nameHtml();
   return guideHtml();
 }
 
@@ -518,7 +584,9 @@ function entrySave() {
   }
   const date = $('#e-date').value;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast('날짜를 골라 주세요');
-  store.saveTx({ id: e.id || undefined, type: e.type, amount, cat: e.cat, date, memo });
+  const fields = { id: e.id || undefined, type: e.type, amount, cat: e.cat, date, memo };
+  if (!e.id && ui.me) fields.by = ui.me; // 처음 적은 사람
+  store.saveTx(fields);
   navigator.storage?.persist?.().catch(() => {});
   // 방금 적은 내역이 보이도록 그 달·그 날로 맞춘다
   state.ym = L.monthOf(date);
@@ -528,7 +596,7 @@ function entrySave() {
   toast(e.id ? '고쳤어요' : '기록했어요');
 }
 
-function entryDelete() {
+async function entryDelete() {
   const e = sheet;
   if (e.mode === 'budget') {
     store.setBudget(0);
@@ -536,7 +604,7 @@ function entryDelete() {
     return toast('예산을 없앴어요');
   }
   if (e.mode === 'rule') {
-    if (!confirm('이 고정 내역을 지울까요?\n이미 기록된 내역은 그대로 남아요.')) return;
+    if (!(await ask({ title: '이 고정 내역을 지울까요?', body: '이미 기록된 내역은 그대로 남아요.', ok: '지우기', danger: true }))) return;
     store.deleteRule(e.id);
     closeSheet();
     return toast('고정 내역을 지웠어요');
@@ -577,9 +645,10 @@ function catSave() {
   toast('저장했어요');
 }
 
-function catDelete() {
-  if (!confirm('이 카테고리를 지울까요?\n이미 기록된 내역에는 이름이 그대로 남아요.')) return;
-  store.deleteCat(sheet.id);
+async function catDelete() {
+  const id = sheet.id;
+  if (!(await ask({ title: '이 카테고리를 지울까요?', body: '이미 기록된 내역에는 이름이 그대로 남아요.', ok: '지우기', danger: true }))) return;
+  store.deleteCat(id);
   closeSheet();
   toast('카테고리를 지웠어요');
 }
@@ -601,8 +670,33 @@ function codeHtml() {
         <button class="soft-btn" data-act="code-copy">코드 복사</button>
         ${navigator.share ? '<button class="soft-btn" data-act="code-share">보내기</button>' : ''}
       </div>
-      <button class="primary" data-act="close">확인</button>
+      <button class="primary" data-act="code-done">확인</button>
     </section>`;
+}
+
+// ── 내 이름: 이 기기에서 적은 내역에 붙는다 (기기마다 따로 정한다) ──
+function nameHtml() {
+  return `
+    <div class="backdrop" data-act="close"></div>
+    <section class="sheet form" role="dialog" aria-modal="true" aria-label="내 이름" tabindex="-1">
+      <header class="sheet-head">
+        <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
+        <h2>내 이름</h2><span class="head-pad"></span>
+      </header>
+      <label class="field"><span>이 폰에서 적는 내역에 표시할 이름</span>
+        <input type="text" id="n-name" value="${esc(ui.me)}" maxlength="6" placeholder="예: 엄마" autocomplete="off" enterkeyhint="done">
+      </label>
+      <p class="muted small">가족이 같이 쓸 때 누가 적었는지 내역 옆에 보여요. 지금부터 적는 내역에 붙습니다.</p>
+      <button class="primary" data-act="name-save">저장</button>
+    </section>`;
+}
+
+function nameSave() {
+  ui.me = $('#n-name').value.trim().slice(0, 6);
+  saveUi();
+  closeSheet();
+  render();
+  toast(ui.me ? `이제 '${ui.me}' 이름으로 적혀요` : '이름을 지웠어요');
 }
 
 function joinHtml() {
@@ -622,7 +716,7 @@ function joinHtml() {
 }
 
 async function syncCreate() {
-  if (!confirm('가족 코드를 만들까요?\n이 기기의 기록이 가족 가계부에 올라갑니다.')) return;
+  if (!(await ask({ title: '가족 코드를 만들까요?', body: '이 기기의 기록이 가족 가계부에 올라갑니다.', ok: '만들기' }))) return;
   toast('가족 코드를 만드는 중…');
   try {
     await sync.create();
@@ -634,6 +728,12 @@ async function syncCreate() {
   }
 }
 
+async function syncTap() {
+  await sync.syncNow();
+  const s = sync.status;
+  toast(s.phase === 'idle' ? '가족 기기와 맞췄어요' : syncStatusText(), null, s.phase === 'idle' ? 0 : 4000);
+}
+
 async function syncJoin() {
   const btn = $('#j-save');
   if (btn.disabled) return;
@@ -641,7 +741,8 @@ async function syncJoin() {
   btn.textContent = '연결하는 중…';
   try {
     await sync.join($('#j-code').value);
-    closeSheet();
+    if (ui.me) closeSheet();
+    else openSheet({ kind: 'name' }); // 이어서 이름을 정한다
     render();
     toast('가족 가계부에 연결했어요');
   } catch (err) {
@@ -826,12 +927,12 @@ const actions = {
   },
   export: exportBackup,
   import: () => $('#import-file').click(),
-  clear: () => {
+  clear: async () => {
     const linked = sync.status.linked;
-    const msg = linked
-      ? '이 기기의 기록을 모두 지우고 가족 연결도 끊을까요?\n다른 기기의 기록은 그대로 남아요.'
-      : '모든 기록을 지울까요?\n내역·예산·고정 내역·카테고리가 모두 사라지고 되돌릴 수 없어요.';
-    if (!confirm(msg)) return;
+    const q = linked
+      ? { title: '이 기기의 기록을 모두 지우고 가족 연결도 끊을까요?', body: '다른 기기의 기록은 그대로 남아요.' }
+      : { title: '모든 기록을 지울까요?', body: '내역·예산·고정 내역·카테고리가 모두 사라지고 되돌릴 수 없어요.' };
+    if (!(await ask({ ...q, ok: '지우기', danger: true }))) return;
     if (linked) sync.unlink(); // 먼저 끊어야 '지움'이 다른 기기로 퍼지지 않는다
     store.clearAll();
     toast(linked ? '이 기기의 기록을 지우고 연결을 끊었어요' : '모든 기록을 지웠어요');
@@ -842,13 +943,18 @@ const actions = {
   'sync-code': () => openSheet({ kind: 'code' }),
   'code-copy': codeCopy,
   'code-share': () => navigator.share({ text: `가계부 가족 코드: ${formatCode(sync.status.code)}` }).catch(() => {}),
-  'sync-now': async () => {
-    await sync.syncNow();
-    const s = sync.status;
-    toast(s.phase === 'idle' ? '가족 기기와 맞췄어요' : syncStatusText(), null, s.phase === 'idle' ? 0 : 4000);
+  'sync-now': syncTap,
+  'sync-tap': syncTap,
+  'code-done': () => {
+    if (ui.me) closeSheet();
+    else openSheet({ kind: 'name' }); // 코드를 만든 직후에는 이어서 이름을 정한다
   },
-  'sync-unlink': () => {
-    if (!confirm('이 기기의 가족 연결을 끊을까요?\n기록은 이 기기에 그대로 남고, 더 이상 맞춰지지 않아요.')) return;
+  'name-edit': () => openSheet({ kind: 'name' }),
+  'name-save': nameSave,
+  'dlg-yes': () => closeDialog(true),
+  'dlg-no': () => closeDialog(false),
+  'sync-unlink': async () => {
+    if (!(await ask({ title: '이 기기의 가족 연결을 끊을까요?', body: '기록은 이 기기에 그대로 남고, 더 이상 맞춰지지 않아요.', ok: '끊기', danger: true }))) return;
     sync.unlink();
     render();
     toast('연결을 끊었어요');
@@ -874,7 +980,9 @@ document.addEventListener('click', (ev) => {
 
 // 차트 막대는 키보드로도 누를 수 있게
 document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && dialog) return closeDialog(false);
   if (ev.key === 'Escape' && sheet) return closeSheet();
+  if (ev.key === 'Enter' && ev.target.matches?.('#n-name')) return nameSave();
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('g[data-act]')) {
     ev.preventDefault();
     actions[ev.target.dataset.act]?.(ev.target);
@@ -897,8 +1005,16 @@ $('#import-file').addEventListener('change', (ev) => {
   if (file) importBackup(file);
 });
 
-// 뒤로 가기(안드로이드 버튼 포함)는 열린 시트를 닫는다
-window.addEventListener('popstate', () => closeSheet(true));
+// 뒤로 가기(안드로이드 버튼 포함)는 확인 창 → 시트 순서로 닫는다
+window.addEventListener('popstate', () => {
+  if (afterPop) return afterPop(); // 확인 창을 닫으며 우리가 부른 뒤로 가기
+  if (dialog) {
+    closeDialog(false, true);
+    if (sheet) history.pushState({ sheet: true }, ''); // 방금 빠진 것은 시트 몫이었으니 다시 채운다
+    return;
+  }
+  closeSheet(true);
+});
 
 window.addEventListener('beforeinstallprompt', (ev) => {
   ev.preventDefault();
@@ -944,7 +1060,47 @@ setInterval(() => {
 sync.subscribe(() => {
   const el = $('#sync-status');
   if (el) el.textContent = syncStatusText();
+  renderTop();
 });
+
+// 당겨서 맞추기: 맨 위에서 아래로 당겼다 놓으면 가족 기기와 맞춘다 (연결된 경우만)
+(() => {
+  const view = $('#view');
+  const ptr = $('#ptr');
+  const NEED = 64;
+  let startY = null;
+  let pull = 0;
+  const paint = () => {
+    ptr.style.opacity = Math.min(pull / NEED, 1);
+    ptr.style.transform = `translate(-50%, ${Math.round(pull * 0.6 - 20)}px)`;
+    ptr.textContent = pull >= NEED ? '놓으면 맞춰요' : '당겨서 맞추기';
+  };
+  view.addEventListener('touchstart', (ev) => {
+    const ok = !sheet && !dialog && sync.status.linked && view.scrollTop <= 0 && ev.touches.length === 1;
+    startY = ok ? ev.touches[0].clientY : null;
+    pull = 0;
+  }, { passive: true });
+  view.addEventListener('touchmove', (ev) => {
+    if (startY === null) return;
+    const dy = ev.touches[0].clientY - startY;
+    pull = dy > 0 && view.scrollTop <= 0 ? Math.min(dy * 0.5, 90) : 0;
+    paint();
+  }, { passive: true });
+  const end = async () => {
+    if (startY === null) return;
+    const go = pull >= NEED;
+    startY = null;
+    if (go) {
+      ptr.textContent = '맞추는 중…';
+      await syncTap();
+      if (!sheet) refreshDay();
+    }
+    pull = 0;
+    paint();
+  };
+  view.addEventListener('touchend', end);
+  view.addEventListener('touchcancel', end);
+})();
 sync.request(300);
 
 store.subscribe((ok) => {
