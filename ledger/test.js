@@ -166,6 +166,38 @@ test('금액 표시', () => {
   assert.equal(L.koreanAmount(123456789), '1억 2,345만 6,789원');
 });
 
+test('달력 칸 숫자', () => {
+  assert.equal(L.calNum(56500), '56,500');
+  assert.equal(L.calNum(99999), '99,999');
+  assert.equal(L.calNum(123456), '12.3만');
+  assert.equal(L.calNum(500000), '50만');
+  assert.equal(L.calNum(3000000), '300만');
+  assert.equal(L.calNum(250000000), '2.5억');
+  assert.equal(L.calNum(56500, true), '5.6만');
+  assert.equal(L.calNum(9900, true), '9,900');
+});
+
+test('내역 찾기: 메모·카테고리·적은 사람·금액, 카테고리 거르기', () => {
+  const txs = [
+    tx('a', 'expense', 12500, 'c_cafe', '2026-11-01', { memo: '아메리카노', by: '엄마' }),
+    tx('b', 'expense', 32400, 'c_food', '2026-11-02', { memo: '장보기' }),
+    tx('c', 'expense', 9000, 'c_food', '2026-11-03', { memo: '', by: '아빠' }),
+    tx('d', 'expense', 1000, 'c_food', '2026-11-04', { memo: '지운 것', deleted: true }),
+  ];
+  const name = (id) => ({ c_cafe: '카페·간식', c_food: '식비' })[id];
+  const ids = (f) => L.filterTx(txs, f, name).map((t) => t.id).join('');
+  assert.equal(ids({}), 'abc');
+  assert.equal(ids({ q: '아메' }), 'a');
+  assert.equal(ids({ q: '식비' }), 'bc'); // 메모가 없어도 카테고리 이름으로
+  assert.equal(ids({ q: '아빠' }), 'c');
+  assert.equal(ids({ q: '12,500' }), 'a');
+  assert.equal(ids({ q: '32400' }), 'b');
+  assert.equal(ids({ q: '식비 장' }), 'b'); // 띄어 쓴 말은 모두 들어 있어야
+  assert.equal(ids({ cat: 'c_food' }), 'bc');
+  assert.equal(ids({ cat: 'c_food', q: '장' }), 'b');
+  assert.equal(ids({ q: '없는말' }), '');
+});
+
 test('기록 합치기: 늦게 고친 쪽이 이긴다', () => {
   const mine = [{ id: 'a', v: 1, updatedAt: 10 }, { id: 'b', v: 1, updatedAt: 10 }];
   const theirs = [{ id: 'a', v: 2, updatedAt: 20 }, { id: 'b', v: 2, updatedAt: 5 }, { id: 'c', v: 2, updatedAt: 1 }];
