@@ -85,6 +85,32 @@ test('예산: 지난 달·다음 달·예산 없음', () => {
   assert.equal(L.budgetStatus({ budget: 10, spent: 1, ym: '2026-12', today: '2026-11-16' }).phase, 'future');
 });
 
+test('오늘 남은 돈: 하루 기준액에서 오늘 쓴 돈을 뺀다', () => {
+  const txs = [
+    tx('a', 'expense', 150000, 'c', '2026-11-10'),
+    tx('b', 'expense', 12000, 'c', '2026-11-16'),
+    tx('c', 'income', 99999, 'c', '2026-11-16'),
+    tx('d', 'expense', 7000, 'c', '2026-10-16'), // 다른 달
+  ];
+  // 오늘 쓰기 전 남은 예산 450,000 ÷ 15일 = 30,000
+  const t = L.todayStatus({ budget: 600000, txs, today: '2026-11-16' });
+  assert.deepEqual(t, { allowance: 30000, spentToday: 12000, left: 18000, over: false, daysLeft: 15, nextPerDay: Math.floor(438000 / 14) });
+  assert.equal(L.todayStatus({ budget: 0, txs, today: '2026-11-16' }), null);
+});
+
+test('오늘 남은 돈: 초과, 고정 내역 제외, 말일', () => {
+  const over = L.todayStatus({ budget: 600000, txs: [tx('a', 'expense', 50000, 'c', '2026-11-16')], today: '2026-11-16' });
+  assert.equal(over.allowance, 40000);
+  assert.equal(over.left, -10000);
+  assert.equal(over.over, true);
+  // 오늘 나간 월세(고정)는 '오늘 쓴 돈'이 아니지만 예산에서는 빠진다
+  const rent = L.todayStatus({ budget: 600000, txs: [tx('r', 'expense', 300000, 'c', '2026-11-16', { ruleId: 'x' })], today: '2026-11-16' });
+  assert.deepEqual([rent.spentToday, rent.allowance, rent.left], [0, 20000, 20000]);
+  // 말일: 내일 기준액은 0, 이미 예산을 넘겼으면 기준액도 0
+  const last = L.todayStatus({ budget: 100000, txs: [tx('a', 'expense', 130000, 'c', '2026-11-20')], today: '2026-11-30' });
+  assert.deepEqual([last.allowance, last.left, last.daysLeft, last.nextPerDay], [0, 0, 1, 0]);
+});
+
 test('고정 지출: 도래한 달만, 이미 있는 달은 건너뛴다', () => {
   const rule = { id: 'rent', type: 'expense', amount: 500000, cat: 'home', memo: '월세', day: 25, startYm: '2026-09' };
   const made = L.dueRecurring([rule], new Set(), '2026-11-16');
