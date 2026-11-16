@@ -254,6 +254,21 @@ test('저축: 지출·예산과 따로 세고 목표 대비 상태를 알려 준
   assert.deepEqual(due.map((x) => [x.date, x.type]), [['2026-10-25', 'saving']]);
 });
 
+test('남은 돈: 수입 − 지출 − 저축이 달을 넘어 이어진다', () => {
+  const txs = [
+    tx('a', 'income', 300000, 'i_pay', '2026-01-25'),
+    tx('b', 'saving', 150000, 's_bank', '2026-01-26'),
+    tx('c', 'income', 350000, 'i_pay', '2026-02-25'),
+    tx('d', 'saving', 150000, 's_bank', '2026-02-26'),
+    tx('e', 'expense', 999, 'c_food', '2026-02-27', { deleted: true }),
+    tx('f', 'expense', 40000, 'c_food', '2026-03-02'),
+  ];
+  assert.deepEqual(L.leftover(txs, '2026-01'), { carry: 0, month: 150000, total: 150000, hasPrior: false });
+  assert.deepEqual(L.leftover(txs, '2026-02'), { carry: 150000, month: 200000, total: 350000, hasPrior: true });
+  assert.deepEqual(L.leftover(txs, '2026-03'), { carry: 350000, month: -40000, total: 310000, hasPrior: true });
+  assert.deepEqual(L.leftover(txs, '2025-12'), { carry: 0, month: 0, total: 0, hasPrior: false });
+});
+
 test('저축: 저장소가 저축 카테고리·내역·목표를 다룬다 (예전 기록에도 카테고리가 생긴다)', () => {
   const mem = memStorage();
   mem.setItem('ledger.v1', JSON.stringify({ v: 1, txs: [], cats: [{ id: 'c_food', type: 'expense', name: '밥', emoji: '🍚', order: 1, updatedAt: 5 }], rules: [], settings: { budget: 100, updatedAt: 1 } }));

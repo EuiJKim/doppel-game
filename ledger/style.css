@@ -148,6 +148,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .tile { padding: 14px 16px; min-width: 0; }
 .tile-val { font-size: calc(18px * var(--fs)); font-weight: 700; margin-top: 2px; overflow-wrap: anywhere; }
 
+.left .left-val { font-size: calc(24px * var(--fs)); font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; overflow-wrap: anywhere; }
+.left-val.neg, .kv b.neg { color: var(--danger); }
+.kv { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: calc(14px * var(--fs)); color: var(--ink2); }
+.kv p { margin: 0; display: flex; justify-content: space-between; gap: 2px 12px; flex-wrap: wrap; }
+.kv b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: auto; }
+.label .muted { font-size: calc(12px * var(--fs)); }
 .savings .save-val { font-size: calc(24px * var(--fs)); font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: var(--saving); overflow-wrap: anywhere; }
 .savings .meter { margin-top: 12px; }
 .savings .meter i { background: var(--saving); }

@@ -50,6 +50,26 @@ export function summarize(txs) {
   return { income, expense, saving, balance: income - expense - saving };
 }
 
+// 남은 돈 = 수입 − 지출 − 저축. 달이 바뀌어도 이어진다:
+// carry = 그 전 달까지 남아서 넘어온 돈, month = 그 달에 남은 돈, total = 그 달 말까지 남은 돈
+export function leftover(txs, ym) {
+  let carry = 0;
+  let month = 0;
+  let hasPrior = false;
+  for (const t of txs) {
+    if (t.deleted) continue;
+    const m = t.date.slice(0, 7);
+    if (m > ym) continue;
+    const v = t.type === 'income' ? t.amount : -t.amount;
+    if (m === ym) month += v;
+    else {
+      carry += v;
+      hasPrior = true;
+    }
+  }
+  return { carry, month, total: carry + month, hasPrior };
+}
+
 // 지금까지 저축한 돈 (모든 달)
 export function savedTotal(txs) {
   let total = 0;

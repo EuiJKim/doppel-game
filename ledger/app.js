@@ -121,6 +121,7 @@ function viewHome() {
   const txs = L.monthTx(store.txs, state.ym);
   const sum = L.summarize(txs);
   const b = L.budgetStatus({ budget: store.budget, spent: sum.expense, ym: state.ym, today });
+  const left = L.leftover(store.txs, state.ym);
   const m = monthLabel(state.ym);
   const recent = L.byDay(txs).flatMap((g) => g.items).slice(0, 5);
 
@@ -128,8 +129,9 @@ function viewHome() {
   if (!b) {
     hero = `
       <section class="card hero">
-        <p class="label">${m} 수입 − 지출${sum.saving ? ' − 저축' : ''}</p>
-        <p class="big${sum.balance < 0 ? ' neg' : ''}">${won(sum.balance)}</p>
+        <p class="label">${m} 남은 돈 <span class="muted">수입 − 지출 − 저축</span></p>
+        <p class="big${left.total < 0 ? ' neg' : ''}">${won(left.total)}</p>
+        ${leftRows(left, m)}
         <button class="soft-btn" data-act="budget">월 예산 정하기</button>
         <p class="note">예산을 정하면 하루에 쓸 수 있는 돈을 알려드려요.</p>
       </section>`;
@@ -172,6 +174,12 @@ function viewHome() {
       <div class="card tile"><p class="label">수입</p><p class="tile-val income">+${won(sum.income)}</p></div>
       <div class="card tile"><p class="label">지출</p><p class="tile-val">${won(sum.expense)}</p></div>
     </section>
+    ${b ? `
+    <section class="card left">
+      <div class="card-head"><h2>${m} 남은 돈</h2><span class="muted small">수입 − 지출 − 저축</span></div>
+      <p class="left-val${left.total < 0 ? ' neg' : ''}">${won(left.total)}</p>
+      ${leftRows(left, m)}
+    </section>` : ''}
     ${savingCard(sum.saving, m)}
     <section class="card">
       <div class="card-head"><h2>최근 내역</h2>${recent.length ? '<button class="link-btn" data-act="go-list">전체 보기</button>' : ''}</div>
@@ -183,6 +191,13 @@ function viewHome() {
       <button class="soft-btn" data-act="install">설치</button>
       <button class="icon-btn small" data-act="install-hide" aria-label="설치 안내 닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </section>` : ''}`;
+}
+
+// 남은 돈이 어떻게 나왔는지: 지난달에서 넘어온 돈 + 이번 달에 남은 돈. 앞선 달 기록이 없으면 보여 줄 것이 없다
+function leftRows(left, m) {
+  if (!left.hasPrior) return '';
+  const row = (name, v) => `<p><span>${name}</span><b class="${v < 0 ? 'neg' : ''}">${won(v)}</b></p>`;
+  return `<div class="kv">${row('지난달에서 넘어온 돈', left.carry)}${row(`${m}에 남은 돈`, left.month)}</div>`;
 }
 
 // 저축: 이번 달에 모은 돈과 목표. 저축한 적도 목표도 없으면 목표를 정하는 한 줄만 보여 준다
