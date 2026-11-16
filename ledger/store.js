@@ -23,14 +23,22 @@ export const DEFAULT_CATS = [
   cat('i_allow', 'income', '용돈', '🧧', 2),
   cat('i_side', 'income', '부수입', '💵', 3),
   cat('i_etc', 'income', '기타', '➕', 99),
+  cat('s_bank', 'saving', '적금', '🏦', 1),
+  cat('s_house', 'saving', '청약', '🔑', 2),
+  cat('s_invest', 'saving', '투자', '📈', 3),
+  cat('s_spare', 'saving', '비상금', '🐷', 4),
+  cat('s_etc', 'saving', '기타', '💬', 99),
 ];
+
+const isType = (t) => t === 'income' || t === 'expense' || t === 'saving';
+const amountOf = (n) => Math.max(0, Math.round(n) || 0);
 
 const empty = () => ({
   v: 1,
   txs: [],
   cats: DEFAULT_CATS.map((c) => ({ ...c })),
   rules: [],
-  settings: { budget: 0, updatedAt: 0 },
+  settings: { budget: 0, saveGoal: 0, updatedAt: 0 },
 });
 
 export const newId = () =>
@@ -43,7 +51,7 @@ function normalize(raw) {
   if (!raw || typeof raw !== 'object') return base;
   const arr = (x) => (Array.isArray(x) ? x.filter((r) => r && typeof r.id === 'string') : []);
   const txs = arr(raw.txs).filter(
-    (t) => Number.isFinite(t.amount) && /^\d{4}-\d{2}-\d{2}$/.test(t.date || '') && (t.type === 'income' || t.type === 'expense'),
+    (t) => Number.isFinite(t.amount) && /^\d{4}-\d{2}-\d{2}$/.test(t.date || '') && isType(t.type),
   );
   return {
     v: 1,
@@ -81,8 +89,8 @@ export function createStore(storage = globalThis.localStorage) {
 
   const LISTS = { tx: 'txs', cat: 'cats', rule: 'rules' };
   const validRemote = {
-    tx: (t) => Number.isFinite(t.amount) && /^\d{4}-\d{2}-\d{2}$/.test(t.date || '') && (t.type === 'income' || t.type === 'expense'),
-    cat: (c) => typeof c.name === 'string' && (c.type === 'income' || c.type === 'expense'),
+    tx: (t) => Number.isFinite(t.amount) && /^\d{4}-\d{2}-\d{2}$/.test(t.date || '') && isType(t.type),
+    cat: (c) => typeof c.name === 'string' && isType(c.type),
     rule: (r) => Number.isFinite(r.amount) && Number.isFinite(r.day) && typeof r.startYm === 'string',
   };
 
@@ -106,6 +114,10 @@ export function createStore(storage = globalThis.localStorage) {
     },
     get budget() {
       return data.settings.budget || 0;
+    },
+    // 한 달 저축 목표 (0 = 정하지 않음)
+    get saveGoal() {
+      return data.settings.saveGoal || 0;
     },
     // 고를 수 있는 카테고리 (지운 것은 빠진다)
     cats(type) {
@@ -182,7 +194,11 @@ export function createStore(storage = globalThis.localStorage) {
     },
 
     setBudget(n) {
-      data.settings = { ...data.settings, budget: Math.max(0, Math.round(n) || 0), updatedAt: Date.now() };
+      data.settings = { ...data.settings, budget: amountOf(n), updatedAt: Date.now() };
+      commit(['set:main']);
+    },
+    setSaveGoal(n) {
+      data.settings = { ...data.settings, saveGoal: amountOf(n), updatedAt: Date.now() };
       commit(['set:main']);
     },
 
@@ -238,7 +254,7 @@ export function createStore(storage = globalThis.localStorage) {
       const i = key.indexOf(':');
       const kind = key.slice(0, i);
       const id = key.slice(i + 1);
-      if (kind === 'set') return { id: 'main', budget: data.settings.budget || 0, updatedAt: data.settings.updatedAt || 0 };
+      if (kind === 'set') return { id: 'main', budget: data.settings.budget || 0, saveGoal: data.settings.saveGoal || 0, updatedAt: data.settings.updatedAt || 0 };
       return data[LISTS[kind]]?.find((r) => r.id === id) || null;
     },
     // 다른 기기의 기록을 합친다: 같은 기록은 늦게 고친 쪽이 이긴다.
@@ -253,7 +269,9 @@ export function createStore(storage = globalThis.localStorage) {
           const mine = data.settings.updatedAt || 0;
           const theirs = rec.updatedAt || 0;
           if (theirs > mine) {
-            data.settings = { budget: Math.max(0, Math.round(rec.budget) || 0), updatedAt: theirs };
+            // 저축 목표를 모르는 예전 버전이 올린 설정이면 이 기기의 목표를 그대로 둔다
+            const saveGoal = rec.saveGoal === undefined ? data.settings.saveGoal || 0 : amountOf(rec.saveGoal);
+            data.settings = { budget: amountOf(rec.budget), saveGoal, updatedAt: theirs };
             remoteNewer.push('set:main');
           } else if (mine > theirs) localNewer.push('set:main');
           continue;
