@@ -33,7 +33,7 @@ test('월 합계는 지운 내역과 다른 달을 뺀다', () => {
     tx('d', 'expense', 7000, 'food', '2026-10-31'),
   ];
   const s = L.summarize(L.monthTx(txs, '2026-11'));
-  assert.deepEqual(s, { income: 3000000, expense: 5000, balance: 2995000 });
+  assert.deepEqual(s, { income: 3000000, expense: 5000, saving: 0, balance: 2995000 });
 });
 
 test('카테고리별 합계는 큰 순서, 비율 합 1', () => {
@@ -225,6 +225,98 @@ const device = (server, storage = memStorage()) => {
 };
 const tick = () => new Promise((r) => setTimeout(r, 3)); // 고친 시각이 겹치지 않게
 const liveTx = (d) => d.store.txs.filter((t) => !t.deleted).map((t) => `${t.memo}:${t.amount}`).sort();
+
+test('저축: 지출·예산과 따로 세고 목표 대비 상태를 알려 준다', () => {
+  const txs = [
+    tx('a', 'expense', 20000, 'c_food', '2026-11-16'),
+    tx('b', 'income', 3000000, 'i_pay', '2026-11-10'),
+    tx('c', 'saving', 300000, 's_bank', '2026-11-16', { createdAt: 2 }),
+    tx('d', 'saving', 100000, 's_spare', '2026-10-25'),
+    tx('e', 'saving', 999, 's_bank', '2026-11-02', { deleted: true }),
+  ];
+  const nov = L.monthTx(txs, '2026-11');
+  assert.deepEqual(L.summarize(nov), { income: 3000000, expense: 20000, saving: 300000, balance: 2680000 });
+  assert.equal(L.savedTotal(txs), 400000);
+  // 저축은 예산에서 빠지지 않고 '오늘 쓴 돈'에도 들지 않는다
+  const t = L.todayStatus({ budget: 600000, txs, today: '2026-11-16' });
+  assert.equal(t.spentToday, 20000);
+  assert.equal(t.allowance, 40000);
+  const day = L.byDay(nov).find((g) => g.date === '2026-11-16');
+  assert.deepEqual([day.income, day.expense, day.saving], [0, 20000, 300000]);
+  assert.deepEqual(L.byCategory(nov, 'saving').rows.map((r) => [r.cat, r.total]), [['s_bank', 300000]]);
+  assert.deepEqual(L.monthlyTrend(txs, '2026-11', 2).map((m) => m.saving), [100000, 300000]);
+  assert.equal(L.savingStatus({ goal: 0, saved: 300000 }), null);
+  assert.deepEqual(L.savingStatus({ goal: 500000, saved: 300000 }), { goal: 500000, saved: 300000, left: 200000, ratio: 0.6, done: false });
+  const done = L.savingStatus({ goal: 500000, saved: 650000 });
+  assert.deepEqual([done.left, done.ratio, done.done], [0, 1, true]);
+  // 매달 적금도 고정 내역으로 기록된다
+  const due = L.dueRecurring([{ id: 'sv', type: 'saving', amount: 300000, cat: 's_bank', day: 25, startYm: '2026-10' }], new Set(), '2026-11-16');
+  assert.deepEqual(due.map((x) => [x.date, x.type]), [['2026-10-25', 'saving']]);
+});
+
+test('남은 돈: 수입 − 지출 − 저축이 달을 넘어 이어진다', () => {
+  const txs = [
+    tx('a', 'income', 300000, 'i_pay', '2026-01-25'),
+    tx('b', 'saving', 150000, 's_bank', '2026-01-26'),
+    tx('c', 'income', 350000, 'i_pay', '2026-02-25'),
+    tx('d', 'saving', 150000, 's_bank', '2026-02-26'),
+    tx('e', 'expense', 999, 'c_food', '2026-02-27', { deleted: true }),
+    tx('f', 'expense', 40000, 'c_food', '2026-03-02'),
+  ];
+  assert.deepEqual(L.leftover(txs, '2026-01'), { carry: 0, month: 150000, total: 150000, hasPrior: false });
+  assert.deepEqual(L.leftover(txs, '2026-02'), { carry: 150000, month: 200000, total: 350000, hasPrior: true });
+  assert.deepEqual(L.leftover(txs, '2026-03'), { carry: 350000, month: -40000, total: 310000, hasPrior: true });
+  assert.deepEqual(L.leftover(txs, '2025-12'), { carry: 0, month: 0, total: 0, hasPrior: false });
+});
+
+test('저축: 저장소가 저축 카테고리·내역·목표를 다룬다 (예전 기록에도 카테고리가 생긴다)', () => {
+  const mem = memStorage();
+  mem.setItem('ledger.v1', JSON.stringify({ v: 1, txs: [], cats: [{ id: 'c_food', type: 'expense', name: '밥', emoji: '🍚', order: 1, updatedAt: 5 }], rules: [], settings: { budget: 100, updatedAt: 1 } }));
+  const s = createStore(mem);
+  assert.equal(s.cat('c_food').name, '밥');
+  assert.deepEqual(s.cats('saving').map((c) => c.name), ['적금', '청약', '투자', '비상금', '기타']);
+  assert.equal(s.saveGoal, 0);
+  s.setSaveGoal(500000);
+  s.saveTx({ type: 'saving', amount: 300000, cat: 's_bank', date: '2026-11-16', memo: '' });
+  const again = createStore(mem);
+  assert.equal(again.saveGoal, 500000);
+  assert.equal(again.budget, 100);
+  assert.equal(again.txs[0].type, 'saving');
+  const back = createStore(memStorage());
+  assert.equal(back.importData(JSON.parse(JSON.stringify(again.exportData()))), 1);
+  assert.equal(back.saveGoal, 500000);
+  // 저축 목표를 모르는 예전 버전이 올린 설정은 목표를 지우지 않는다
+  back.applyRemote([{ kind: 'set', rec: { id: 'main', budget: 900, updatedAt: Date.now() + 1000 } }]);
+  assert.deepEqual([back.budget, back.saveGoal], [900, 500000]);
+  back.applyRemote([{ kind: 'set', rec: { id: 'main', budget: 900, saveGoal: 0, updatedAt: Date.now() + 2000 } }]);
+  assert.equal(back.saveGoal, 0);
+});
+
+await atest('저축: 다른 기기로 전달되고, 앱이 새 버전이 되면 건너뛴 기록을 다시 받는다', async () => {
+  const server = createFakeFirestore();
+  const A = device(server);
+  const B = device(server);
+  const code = await A.sync.create();
+  await B.sync.join(code);
+  A.store.setSaveGoal(500000);
+  A.store.saveTx({ type: 'saving', amount: 300000, cat: 's_bank', date: '2026-11-16', memo: '적금' });
+  await A.sync.syncNow();
+  await B.sync.syncNow();
+  assert.equal(B.store.saveGoal, 500000);
+  assert.deepEqual(liveTx(B), ['적금:300000']);
+  // 예전 버전처럼: 받은 곳(cursor)은 앞으로 갔는데 저축 내역은 버린 기기
+  const C = device(server);
+  await C.sync.join(code);
+  const raw = { ...JSON.parse(C.storage.getItem('ledger.v1')), txs: [] };
+  C.storage.setItem('ledger.v1', JSON.stringify(raw));
+  const st = JSON.parse(C.storage.getItem('ledger.sync'));
+  delete st.v;
+  C.storage.setItem('ledger.sync', JSON.stringify(st));
+  const C2 = device(server, C.storage);
+  await C2.sync.syncNow();
+  assert.deepEqual(liveTx(C2), ['적금:300000']);
+  assert.equal(JSON.parse(C.storage.getItem('ledger.sync')).v, 2);
+});
 
 await atest('가족 코드: 만들기·정리·오타 감지', async () => {
   const code = makeCode();

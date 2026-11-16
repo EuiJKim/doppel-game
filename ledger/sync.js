@@ -9,6 +9,8 @@
 const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // 헷갈리는 0·1·I·O 제외
 const BODY = 18;
 const STATE_KEY = 'ledger.sync';
+// 앱이 새 종류의 기록을 알게 되면 올린다 (2: 저축). 예전 버전이 모르고 건너뛴 기록을 다시 받기 위해서다
+const SCHEMA = 2;
 const PAGE = 300;
 const BATCH = 200;
 const MAX_DOC = 6000; // firestore.rules 의 크기 제한과 같아야 한다
@@ -79,12 +81,15 @@ export class SyncError extends Error {
 export function createSync({ store, config, storage = globalThis.localStorage, fetch: fetchFn = (...a) => globalThis.fetch(...a), now = Date.now }) {
   const configured = !!config?.projectId;
   const supported = !!globalThis.crypto?.subtle;
-  const blank = () => ({ code: null, cursor: null, dirty: [], lastSyncAt: 0 });
+  const blank = () => ({ v: SCHEMA, code: null, cursor: null, dirty: [], lastSyncAt: 0 });
 
   let st = blank();
   try {
     const saved = JSON.parse(storage.getItem(STATE_KEY) || 'null');
-    if (saved?.code && normalizeCode(saved.code)) st = { ...blank(), ...saved };
+    if (saved?.code && normalizeCode(saved.code)) {
+      st = { ...blank(), ...saved, v: SCHEMA };
+      if (saved.v !== SCHEMA) st.cursor = null; // 처음부터 다시 받아 합친다 (같은 기록은 그대로 둔다)
+    }
   } catch { /* 깨진 상태는 버리고 연결 안 된 것으로 본다 */ }
   const dirty = new Set(st.dirty);
   let keys = null; // 코드에서 뽑은 { hid, key }

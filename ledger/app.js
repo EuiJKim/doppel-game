@@ -32,8 +32,13 @@ const state = { tab: 'home', ym: L.monthOf(today), day: today, statsType: 'expen
 const won = L.formatWon;
 const monthLabel = (ym) => `${Number(ym.slice(5, 7))}월`;
 const dayLabel = (date) => `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일 ${WEEK[L.weekdayOf(date)]}요일`;
+const TYPES = ['expense', 'income', 'saving'];
+const TYPE_WORD = { expense: '지출', income: '수입', saving: '저축' };
 const amountHtml = (t) =>
-  t.type === 'income' ? `<span class="amt income">+${won(t.amount)}</span>` : `<span class="amt">${won(t.amount)}</span>`;
+  t.type === 'income' ? `<span class="amt income">+${won(t.amount)}</span>` : `<span class="amt${t.type === 'saving' ? ' saving' : ''}">${won(t.amount)}</span>`;
+// 지출 · 수입 · 저축 고르기
+const typeSeg = (act, cur, label) => `
+    <div class="seg seg3" role="group" aria-label="${label}">${TYPES.map((t) => `<button data-act="${act}" data-type="${t}" class="${cur === t ? 'on' : ''}" aria-pressed="${cur === t}">${TYPE_WORD[t]}</button>`).join('')}</div>`;
 
 // ───────── 화면 그리기 ─────────
 
@@ -116,19 +121,12 @@ function viewHome() {
   const txs = L.monthTx(store.txs, state.ym);
   const sum = L.summarize(txs);
   const b = L.budgetStatus({ budget: store.budget, spent: sum.expense, ym: state.ym, today });
+  const left = L.leftover(store.txs, state.ym);
   const m = monthLabel(state.ym);
   const recent = L.byDay(txs).flatMap((g) => g.items).slice(0, 5);
 
-  let hero;
-  if (!b) {
-    hero = `
-      <section class="card hero">
-        <p class="label">${m} 수입 − 지출</p>
-        <p class="big${sum.balance < 0 ? ' neg' : ''}">${won(sum.balance)}</p>
-        <button class="soft-btn" data-act="budget">월 예산 정하기</button>
-        <p class="note">예산을 정하면 하루에 쓸 수 있는 돈을 알려드려요.</p>
-      </section>`;
-  } else {
+  let hero = '';
+  if (b) {
     const pct = Math.round((b.spent / b.budget) * 100);
     let label = `${m} 남은 예산`;
     let note = '';
@@ -163,10 +161,9 @@ function viewHome() {
   const showInstall = !isStandalone() && !ui.installHidden;
   return `
     ${hero}
-    <section class="tiles">
-      <div class="card tile"><p class="label">수입</p><p class="tile-val income">+${won(sum.income)}</p></div>
-      <div class="card tile"><p class="label">지출</p><p class="tile-val">${won(sum.expense)}</p></div>
-    </section>
+    ${monthCard(sum, left, m)}
+    ${savingCard(sum.saving, m)}
+    ${setupCard(!b, !store.saveGoal && !sum.saving && !L.savedTotal(store.txs))}
     <section class="card">
       <div class="card-head"><h2>최근 내역</h2>${recent.length ? '<button class="link-btn" data-act="go-list">전체 보기</button>' : ''}</div>
       ${recent.length ? `<div class="rows">${recent.map((t) => txRow(t, { showDate: true })).join('')}</div>` : emptyBox(`${m} 내역이 아직 없어요`, '아래 ＋ 버튼으로 첫 내역을 기록해 보세요.')}
@@ -177,6 +174,46 @@ function viewHome() {
       <button class="soft-btn" data-act="install">설치</button>
       <button class="icon-btn small" data-act="install-hide" aria-label="설치 안내 닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </section>` : ''}`;
+}
+
+// 이번 달 정리: 수입 − 지출 − 저축, 거기에 지난달에서 넘어온 돈을 더한 것이 남은 돈 (영수증처럼 한 장에)
+const signed = (n) => (n < 0 ? `−${won(-n)}` : won(Math.abs(n))); // abs: -0 이 '-0원'으로 찍히지 않게
+function monthCard(sum, left, m) {
+  const row = (name, cls, text) => `<p><span>${name}</span><b class="${cls}">${text}</b></p>`;
+  return `
+    <section class="card month">
+      <div class="card-head"><h2>${m} 정리</h2></div>
+      <div class="kv">
+        ${row('수입', 'income', `+${won(sum.income)}`)}
+        ${row('지출', '', signed(-sum.expense))}
+        ${row('저축', 'saving', signed(-sum.saving))}
+        ${left.hasPrior ? row('지난달에서 넘어온 돈', left.carry < 0 ? 'neg' : '', signed(left.carry)) : ''}
+      </div>
+      <p class="total"><span>남은 돈</span><b class="${left.total < 0 ? 'neg' : ''}">${signed(left.total)}</b></p>
+    </section>`;
+}
+
+// 저축 목표와 얼마나 모았는지. 저축한 적도 목표도 없으면 보여 주지 않는다 (아래 '정하기' 줄로 대신한다)
+function savingCard(saved, m) {
+  const total = L.savedTotal(store.txs);
+  const s = L.savingStatus({ goal: store.saveGoal, saved });
+  if (!s && !total) return '';
+  const pct = s ? Math.round((saved / s.goal) * 100) : 0;
+  return `
+    <section class="card savings">
+      <div class="card-head"><h2>${m} 저축</h2><button class="link-btn" data-act="goal">${s ? `목표 ${won(s.goal)}` : '목표 정하기'}</button></div>
+      ${s ? `<div class="meter" role="meter" aria-label="저축 목표 달성률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(pct, 100)}"><i style="width:${(s.ratio * 100).toFixed(1)}%"></i></div>
+      <div class="meter-foot"><span>${won(saved)} 모음 (${pct}%)</span><span>${s.done ? '목표를 채웠어요' : `${won(s.left)} 남음`}</span></div>` : ''}
+      <p class="note">지금까지 저축 ${won(total)}</p>
+      <button class="soft-btn wide" data-act="add-saving">저축 적기</button>
+    </section>`;
+}
+
+// 아직 정하지 않은 것(월 예산 · 저축 목표)을 한 줄씩 권한다
+function setupCard(needBudget, needGoal) {
+  if (!needBudget && !needGoal) return '';
+  const row = (act, name) => `<button class="set-row" data-act="${act}"><span>${name}</span><span class="set-val go">정하기</span></button>`;
+  return `<section class="card slim">${needBudget ? row('budget', '월 예산') : ''}${needGoal ? row('goal', '한 달 저축 목표') : ''}</section>`;
 }
 
 // ── 내역 ──
@@ -199,7 +236,7 @@ function viewList() {
           <button data-act="list-mode" data-mode="cal" class="${ui.listMode === 'cal' ? 'on' : ''}" aria-pressed="${ui.listMode === 'cal'}">달력</button>
           <button data-act="list-mode" data-mode="list" class="${ui.listMode === 'list' ? 'on' : ''}" aria-pressed="${ui.listMode === 'list'}">목록</button>
         </div>
-        <p class="sum-line"><span>수입 <b class="income">+${won(sum.income)}</b></span><span>지출 <b>${won(sum.expense)}</b></span></p>
+        <p class="sum-line${sum.saving ? ' full' : ''}"><span>수입 <b class="income">+${won(sum.income)}</b></span><span>지출 <b>${won(sum.expense)}</b></span>${sum.saving ? `<span>저축 <b class="saving">${won(sum.saving)}</b></span>` : ''}</p>
         <button class="icon-btn" data-act="find-open" aria-label="내역 찾기">${searchIcon}</button>
       </div>`;
   }
@@ -230,12 +267,13 @@ function listBody() {
     const g = map.get(date);
     const wd = L.weekdayOf(date);
     const cls = ['day', date === state.day ? 'sel' : '', date === today ? 'today' : '', wd === 0 ? 'sun' : '', wd === 6 ? 'sat' : ''].filter(Boolean).join(' ');
-    const aria = `${dayLabel(date)}${g ? `, 수입 ${won(g.income)}, 지출 ${won(g.expense)}` : ''}`;
+    const aria = `${dayLabel(date)}${g ? `, 수입 ${won(g.income)}, 지출 ${won(g.expense)}${g.saving ? `, 저축 ${won(g.saving)}` : ''}` : ''}`;
     cells.push(`
       <button class="${cls}" data-act="day" data-date="${date}" aria-label="${aria}" aria-pressed="${date === state.day}">
         <i>${d}</i>
         ${g && g.income ? `<em class="in">+${L.calNum(g.income, tight)}</em>` : ''}
         ${g && g.expense ? `<em>${L.calNum(g.expense, tight)}</em>` : ''}
+        ${g && g.saving ? `<em class="sv">${L.calNum(g.saving, tight)}</em>` : ''}
       </button>`);
   }
   const sel = state.day && state.day.startsWith(state.ym) ? state.day : null;
@@ -262,7 +300,7 @@ function findBody() {
   const found = L.filterTx(base, { q: state.q, cat: state.filterCat }, (id) => store.cat(id).name);
   const sum = L.summarize(found);
   const m = monthLabel(state.ym);
-  const parts = [`${state.allTime ? '전체 기간' : m} ${found.length}건`, sum.expense ? `지출 ${won(sum.expense)}` : '', sum.income ? `수입 +${won(sum.income)}` : ''].filter(Boolean);
+  const parts = [`${state.allTime ? '전체 기간' : m} ${found.length}건`, sum.expense ? `지출 ${won(sum.expense)}` : '', sum.income ? `수입 +${won(sum.income)}` : '', sum.saving ? `저축 ${won(sum.saving)}` : ''].filter(Boolean);
   const line = `
     <div class="find-sum">
       <span>${parts.join(' · ')}</span>
@@ -288,13 +326,13 @@ function findBody() {
 }
 
 function dayTotals(g) {
-  return [g.income ? `<b class="income">+${won(g.income)}</b>` : '', g.expense ? `<b>${won(g.expense)}</b>` : ''].filter(Boolean).join(' ');
+  return [g.income ? `<b class="income">+${won(g.income)}</b>` : '', g.expense ? `<b>${won(g.expense)}</b>` : '', g.saving ? `<b class="saving">저축 ${won(g.saving)}</b>` : ''].filter(Boolean).join(' ');
 }
 
 // ── 통계 ──
 function viewStats() {
   const type = state.statsType;
-  const word = type === 'income' ? '수입' : '지출';
+  const word = TYPE_WORD[type];
   const txs = L.monthTx(store.txs, state.ym);
   const { total, rows } = L.byCategory(txs, type);
   const m = monthLabel(state.ym);
@@ -306,7 +344,12 @@ function viewStats() {
       const base = c.partial ? '지난달 이맘때' : '그 전 달';
       cmpLine = c.diff === 0 ? `${base}와 똑같이 썼어요.` : `${base}보다 <b>${won(Math.abs(c.diff))} ${c.diff > 0 ? '더' : '덜'}</b> 썼어요.`;
     }
+  } else if (type === 'saving') {
+    const s = L.savingStatus({ goal: store.saveGoal, saved: total });
+    const all = `지금까지 저축 <b>${won(L.savedTotal(store.txs))}</b>`;
+    cmpLine = s ? `${s.done ? `목표 ${won(s.goal)}을 채웠어요.` : `목표 ${won(s.goal)}까지 <b>${won(s.left)}</b> 남았어요.`} ${all}` : all;
   }
+  const emptyHint = { expense: '기록이 쌓이면 어디에 많이 썼는지 보여드려요.', income: '기록이 쌓이면 어디서 들어왔는지 보여드려요.', saving: '＋ 버튼에서 저축을 고르면 따로 기록돼요.' }[type];
 
   const top = rows[0]?.total || 1;
   const catList = rows.length ? `
@@ -320,7 +363,7 @@ function viewStats() {
           <span class="bar"><i style="width:${Math.max((r.total / top) * 100, 1.5).toFixed(1)}%"></i></span>
         </span>
       </button></li>`;
-    }).join('')}</ol>` : emptyBox(`${m} ${word} 내역이 없어요`, '기록이 쌓이면 어디에 많이 썼는지 보여드려요.');
+    }).join('')}</ol>` : emptyBox(`${m} ${word} 내역이 없어요`, emptyHint);
 
   // 추이는 보통 '이번 달까지 6개월'. 더 옛날/앞날을 보고 있으면 그 달이 들어오게 옮긴다
   const cur = L.monthOf(today);
@@ -329,10 +372,7 @@ function viewStats() {
 
   return `
     <div class="list-head">
-      <div class="seg" role="group" aria-label="통계 종류">
-        <button data-act="stats-type" data-type="expense" class="${type === 'expense' ? 'on' : ''}" aria-pressed="${type === 'expense'}">지출</button>
-        <button data-act="stats-type" data-type="income" class="${type === 'income' ? 'on' : ''}" aria-pressed="${type === 'income'}">수입</button>
-      </div>
+      ${typeSeg('stats-type', type, '통계 종류')}
     </div>
     <section class="card hero">
       <p class="label">${m} ${word}</p>
@@ -384,13 +424,14 @@ function viewSettings() {
   const rules = store.rules.slice().sort((a, b) => a.day - b.day);
   return `
     <section class="card">
-      <div class="card-head"><h2>예산</h2></div>
+      <div class="card-head"><h2>예산과 저축</h2></div>
       <button class="set-row" data-act="budget"><span>월 예산</span><span class="set-val">${store.budget ? won(store.budget) : '정하지 않음'}</span></button>
+      <button class="set-row" data-act="goal"><span>한 달 저축 목표</span><span class="set-val">${store.saveGoal ? won(store.saveGoal) : '정하지 않음'}</span></button>
     </section>
 
     <section class="card">
       <div class="card-head"><h2>고정 내역</h2><button class="link-btn" data-act="rule-add">추가</button></div>
-      <p class="muted small pad-b">월세·통신비·월급처럼 매달 같은 날 생기는 돈을 등록하면 그날 자동으로 기록돼요.</p>
+      <p class="muted small pad-b">월세·통신비·월급·적금처럼 매달 같은 날 생기는 돈을 등록하면 그날 자동으로 기록돼요.</p>
       ${rules.length ? `<div class="rows">${rules.map((r) => {
         const c = store.cat(r.cat);
         return `
@@ -406,6 +447,7 @@ function viewSettings() {
       <div class="card-head"><h2>카테고리</h2></div>
       <button class="set-row" data-act="cats-open" data-type="expense"><span>지출 카테고리</span><span class="set-val">${store.cats('expense').length}개</span></button>
       <button class="set-row" data-act="cats-open" data-type="income"><span>수입 카테고리</span><span class="set-val">${store.cats('income').length}개</span></button>
+      <button class="set-row" data-act="cats-open" data-type="saving"><span>저축 카테고리</span><span class="set-val">${store.cats('saving').length}개</span></button>
     </section>
 
     ${syncCard()}
@@ -547,11 +589,13 @@ function sheetHtml() {
   return guideHtml();
 }
 
-// ── 금액 입력 시트: 내역(tx) · 고정 내역(rule) · 예산(budget) 공용 ──
-function openEntry({ mode = 'tx', id = null, date = null } = {}) {
-  const e = { kind: 'entry', mode, id, type: 'expense', amount: '', cat: null, date: date || today, memo: '', day: Number(today.slice(8, 10)) };
-  if (mode === 'budget') {
-    e.amount = store.budget ? String(store.budget) : '';
+// ── 금액 입력 시트: 내역(tx) · 고정 내역(rule) · 예산(budget) · 저축 목표(goal) 공용 ──
+const amountOnly = (mode) => mode === 'budget' || mode === 'goal'; // 금액만 정하는 시트
+function openEntry({ mode = 'tx', id = null, date = null, type = 'expense' } = {}) {
+  const e = { kind: 'entry', mode, id, type, amount: '', cat: null, date: date || today, memo: '', day: Number(today.slice(8, 10)) };
+  if (amountOnly(mode)) {
+    const cur = mode === 'goal' ? store.saveGoal : store.budget;
+    e.amount = cur ? String(cur) : '';
   } else if (id) {
     const src = mode === 'rule' ? store.rule(id) : store.tx(id);
     if (!src) return;
@@ -559,7 +603,7 @@ function openEntry({ mode = 'tx', id = null, date = null } = {}) {
     if (mode === 'rule') e.day = src.day;
     else e.date = src.date;
   }
-  if (mode !== 'budget' && !e.cat) e.cat = defaultCat(e.type);
+  if (!amountOnly(mode) && !e.cat) e.cat = defaultCat(e.type);
   openSheet(e);
 }
 
@@ -570,13 +614,10 @@ function defaultCat(type) {
 
 function entryHtml() {
   const e = sheet;
-  const title = e.mode === 'budget' ? '월 예산' : e.mode === 'rule' ? '고정 내역' : e.id ? '내역 수정' : '내역 추가';
-  const canDelete = e.mode === 'budget' ? store.budget > 0 : !!e.id;
-  const seg = `
-    <div class="seg" role="group" aria-label="종류">
-      <button data-act="e-type" data-type="expense" class="${e.type === 'expense' ? 'on' : ''}" aria-pressed="${e.type === 'expense'}">지출</button>
-      <button data-act="e-type" data-type="income" class="${e.type === 'income' ? 'on' : ''}" aria-pressed="${e.type === 'income'}">수입</button>
-    </div>`;
+  const plain = amountOnly(e.mode);
+  const title = e.mode === 'budget' ? '월 예산' : e.mode === 'goal' ? '한 달 저축 목표' : e.mode === 'rule' ? '고정 내역' : e.id ? '내역 수정' : '내역 추가';
+  const canDelete = e.mode === 'budget' ? store.budget > 0 : e.mode === 'goal' ? store.saveGoal > 0 : !!e.id;
+  const seg = typeSeg('e-type', e.type, '종류');
   const fields = e.mode === 'tx' ? `
     <div class="fields">
       <input type="date" id="e-date" value="${esc(e.date)}" aria-label="날짜" required>
@@ -584,22 +625,23 @@ function entryHtml() {
     </div>` : e.mode === 'rule' ? `
     <div class="fields">
       <select id="e-day" aria-label="매달 기록할 날">${Array.from({ length: 31 }, (_, i) => i + 1).map((d) => `<option value="${d}"${d === e.day ? ' selected' : ''}>매달 ${d === 31 ? '말일' : `${d}일`}</option>`).join('')}</select>
-      <input type="text" id="e-memo" value="${esc(e.memo)}" placeholder="이름 (예: 월세)" maxlength="40" aria-label="이름" autocomplete="off" enterkeyhint="done">
+      <input type="text" id="e-memo" value="${esc(e.memo)}" placeholder="${ruleNameHint(e.type)}" maxlength="40" aria-label="이름" autocomplete="off" enterkeyhint="done">
     </div>` : '';
   const quick = [[1000, '+1천'], [10000, '+1만'], [50000, '+5만'], [100000, '+10만']];
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'back'];
   return `
     <div class="backdrop" data-act="close"></div>
-    <section class="sheet entry mode-${e.mode}" role="dialog" aria-modal="true" aria-label="${title}" tabindex="-1">
+    <section class="sheet entry mode-${plain ? 'budget' : e.mode}" role="dialog" aria-modal="true" aria-label="${title}" tabindex="-1">
       <header class="sheet-head">
         <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
-        ${e.mode === 'budget' ? `<h2>${title}</h2>` : seg}
-        ${canDelete ? `<button class="text-btn danger" data-act="e-delete">${e.mode === 'budget' ? '없애기' : '삭제'}</button>` : whoChip(e)}
+        ${plain ? `<h2>${title}</h2>` : seg}
+        ${canDelete ? `<button class="text-btn danger" data-act="e-delete">${plain ? '없애기' : '삭제'}</button>` : whoChip(e)}
       </header>
       ${e.mode === 'rule' ? '<p class="sheet-hint">매달 정한 날에 자동으로 기록돼요.</p>' : ''}
       ${e.mode === 'budget' ? '<p class="sheet-hint">한 달에 쓸 돈을 정해 두면 남은 예산을 알려드려요.</p>' : ''}
+      ${e.mode === 'goal' ? '<p class="sheet-hint">한 달에 모을 돈을 정해 두면 얼마나 모았는지 알려드려요. 저축은 지출 예산과 따로 셉니다.</p>' : ''}
       <div class="amount" id="e-amount" aria-live="polite"></div>
-      ${e.mode === 'budget' ? '' : `
+      ${plain ? '' : `
       <div class="cats-wrap">
         <div class="cats" id="e-cats" role="group" aria-label="카테고리"></div>
         <span class="cats-more" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
@@ -614,6 +656,8 @@ function entryHtml() {
         : '<button class="primary" data-act="e-save" id="e-save">저장</button>'}
     </section>`;
 }
+
+const ruleNameHint = (type) => `이름 (예: ${{ expense: '월세', income: '월급', saving: '적금' }[type]})`;
 
 // 새 내역을 적을 때 누구 이름으로 적히는지 보여 준다. 가족과 연결했는데 이름이 없으면 정하라고 알려 준다
 function whoChip(e) {
@@ -668,6 +712,12 @@ function entrySave(keepOpen = false) {
     toast('예산을 정했어요');
     return;
   }
+  if (e.mode === 'goal') {
+    store.setSaveGoal(amount);
+    closeSheet();
+    toast('저축 목표를 정했어요');
+    return;
+  }
   if (!e.cat) return toast('카테고리를 골라 주세요');
   const memo = ($('#e-memo')?.value || '').trim();
   ui.lastCat[e.type] = e.cat;
@@ -711,6 +761,11 @@ async function entryDelete() {
     closeSheet();
     return toast('예산을 없앴어요');
   }
+  if (e.mode === 'goal') {
+    store.setSaveGoal(0);
+    closeSheet();
+    return toast('저축 목표를 없앴어요');
+  }
   if (e.mode === 'rule') {
     if (!(await ask({ title: '이 고정 내역을 지울까요?', body: '이미 기록된 내역은 그대로 남아요.', ok: '지우기', danger: true }))) return;
     store.deleteRule(e.id);
@@ -732,10 +787,10 @@ function catsHtml() {
   const chips = store.cats(type).map((c) => `<button class="cat-chip" data-act="cat-edit" data-id="${esc(c.id)}"><span aria-hidden="true">${esc(c.emoji)}</span>${esc(c.name)}</button>`).join('');
   return `
     <div class="backdrop" data-act="close"></div>
-    <section class="sheet form" role="dialog" aria-modal="true" aria-label="${type === 'income' ? '수입' : '지출'} 카테고리" tabindex="-1">
+    <section class="sheet form" role="dialog" aria-modal="true" aria-label="${TYPE_WORD[type]} 카테고리" tabindex="-1">
       <header class="sheet-head">
         <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
-        <h2>${type === 'income' ? '수입' : '지출'} 카테고리</h2>
+        <h2>${TYPE_WORD[type]} 카테고리</h2>
         <button class="text-btn go" data-act="cat-add" data-type="${type}">추가</button>
       </header>
       <p class="muted small">눌러서 이름과 아이콘을 바꿀 수 있어요.</p>
@@ -992,6 +1047,8 @@ const actions = {
   add: (el) => openEntry({ date: el.dataset.date || (state.tab === 'list' && ui.listMode === 'cal' && state.day?.startsWith(state.ym) ? state.day : null) }),
   edit: (el) => openEntry({ id: el.dataset.id }),
   budget: () => openEntry({ mode: 'budget' }),
+  goal: () => openEntry({ mode: 'goal' }),
+  'add-saving': () => openEntry({ type: 'saving' }),
   'rule-add': () => openEntry({ mode: 'rule' }),
   'rule-edit': (el) => openEntry({ mode: 'rule', id: el.dataset.id }),
   'go-list': () => {
@@ -1021,6 +1078,7 @@ const actions = {
       b.setAttribute('aria-pressed', on);
     }
     paintCats();
+    if (sheet.mode === 'rule') $('#e-memo').placeholder = ruleNameHint(sheet.type);
   },
   'e-cat': (el) => {
     sheet.cat = el.dataset.id;
@@ -1064,7 +1122,7 @@ const actions = {
     render();
   },
   'e-delete': entryDelete,
-  'cat-add': (el) => openSheet({ kind: 'cat', id: null, type: el.dataset.type, name: '', emoji: el.dataset.type === 'income' ? '💵' : '💸' }),
+  'cat-add': (el) => openSheet({ kind: 'cat', id: null, type: el.dataset.type, name: '', emoji: { income: '💵', saving: '🏦' }[el.dataset.type] || '💸' }),
   'cat-edit': (el) => {
     const c = store.cat(el.dataset.id);
     openSheet({ kind: 'cat', id: c.id, type: c.type, name: c.name, emoji: c.emoji });

@@ -36,15 +36,51 @@ export function monthTx(txs, ym) {
   return txs.filter((t) => !t.deleted && t.date.startsWith(ym));
 }
 
+// 저축은 지출과 따로 센다 (예산에서 빠지지 않는다). balance = 수입 − 지출 − 저축
 export function summarize(txs) {
   let income = 0;
   let expense = 0;
+  let saving = 0;
   for (const t of txs) {
     if (t.deleted) continue;
     if (t.type === 'income') income += t.amount;
+    else if (t.type === 'saving') saving += t.amount;
     else expense += t.amount;
   }
-  return { income, expense, balance: income - expense };
+  return { income, expense, saving, balance: income - expense - saving };
+}
+
+// 남은 돈 = 수입 − 지출 − 저축. 달이 바뀌어도 이어진다:
+// carry = 그 전 달까지 남아서 넘어온 돈, month = 그 달에 남은 돈, total = 그 달 말까지 남은 돈
+export function leftover(txs, ym) {
+  let carry = 0;
+  let month = 0;
+  let hasPrior = false;
+  for (const t of txs) {
+    if (t.deleted) continue;
+    const m = t.date.slice(0, 7);
+    if (m > ym) continue;
+    const v = t.type === 'income' ? t.amount : -t.amount;
+    if (m === ym) month += v;
+    else {
+      carry += v;
+      hasPrior = true;
+    }
+  }
+  return { carry, month, total: carry + month, hasPrior };
+}
+
+// 지금까지 저축한 돈 (모든 달)
+export function savedTotal(txs) {
+  let total = 0;
+  for (const t of txs) if (!t.deleted && t.type === 'saving') total += t.amount;
+  return total;
+}
+
+// 한 달 저축 목표 대비 상태
+export function savingStatus({ goal, saved }) {
+  if (!goal || goal <= 0) return null;
+  return { goal, saved, left: Math.max(0, goal - saved), ratio: Math.min(saved / goal, 1), done: saved >= goal };
 }
 
 // 카테고리별 합계, 큰 순서
@@ -69,8 +105,8 @@ export function byDay(txs) {
   const map = new Map();
   for (const t of txs) {
     if (t.deleted) continue;
-    const g = map.get(t.date) || { date: t.date, income: 0, expense: 0, items: [] };
-    g[t.type === 'income' ? 'income' : 'expense'] += t.amount;
+    const g = map.get(t.date) || { date: t.date, income: 0, expense: 0, saving: 0, items: [] };
+    g[t.type === 'income' || t.type === 'saving' ? t.type : 'expense'] += t.amount;
     g.items.push(t);
     map.set(t.date, g);
   }
