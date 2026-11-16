@@ -286,11 +286,15 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 @keyframes fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .sheet, .backdrop { animation: none; } }
 
-.sheet-head { flex: none; display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; min-height: 44px; }
+.sheet-head { flex: none; display: grid; grid-template-columns: minmax(56px, auto) 1fr minmax(56px, auto); gap: 4px; align-items: center; min-height: 44px; }
 .sheet-head > :nth-child(2) { justify-self: center; }
 .sheet-head > :nth-child(3) { justify-self: end; }
 .sheet-head h2 { font-size: calc(16px * var(--fs)); font-weight: 700; }
 .text-btn { height: 40px; padding: 0 6px; font-weight: 600; font-size: calc(14.5px * var(--fs)); }
+.who-chip { height: 30px; max-width: 104px; padding: 0 10px; border-radius: 15px; background: var(--fill); color: var(--ink2); font-size: calc(13px * var(--fs)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who-chip.ask { background: var(--accent-weak); color: var(--accent-text); }
+.by { display: inline-block; vertical-align: 1px; margin-left: 6px; padding: 0 6px; border-radius: 6px; background: var(--fill); color: var(--ink2); font-size: calc(11.5px * var(--fs)); font-weight: 600; line-height: 1.5; }
+small > .by:first-child { margin-left: 0; }
 .text-btn.danger { color: var(--danger); }
 .text-btn.go { color: var(--accent-text); }
 .sheet-hint { flex: none; text-align: center; font-size: calc(13px * var(--fs)); color: var(--ink3); margin-top: -4px; }

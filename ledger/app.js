@@ -97,13 +97,14 @@ function syncButton() {
 
 function txRow(t, { showDate = false } = {}) {
   const c = store.cat(t.cat);
-  const sub = [t.memo ? c.name : '', showDate ? `${Number(t.date.slice(5, 7))}월 ${Number(t.date.slice(8, 10))}일` : '', t.ruleId ? '고정' : '', t.by || '']
+  const sub = [t.memo ? c.name : '', showDate ? `${Number(t.date.slice(5, 7))}월 ${Number(t.date.slice(8, 10))}일` : '', t.ruleId ? '고정' : '']
     .filter(Boolean)
     .join(' · ');
+  const by = t.by ? `<span class="by">${esc(t.by)}</span>` : ''; // 적은 사람
   return `
     <button class="row" data-act="edit" data-id="${esc(t.id)}">
       <span class="emo" aria-hidden="true">${esc(c.emoji)}</span>
-      <span class="row-main"><b>${esc(t.memo || c.name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>
+      <span class="row-main"><b>${esc(t.memo || c.name)}</b>${sub || by ? `<small>${esc(sub)}${by}</small>` : ''}</span>
       ${amountHtml(t)}
     </button>`;
 }
@@ -554,7 +555,7 @@ function openEntry({ mode = 'tx', id = null, date = null } = {}) {
   } else if (id) {
     const src = mode === 'rule' ? store.rule(id) : store.tx(id);
     if (!src) return;
-    Object.assign(e, { type: src.type, amount: String(src.amount), cat: src.cat, memo: src.memo || '' });
+    Object.assign(e, { type: src.type, amount: String(src.amount), cat: src.cat, memo: src.memo || '', by: src.by || '' });
     if (mode === 'rule') e.day = src.day;
     else e.date = src.date;
   }
@@ -593,7 +594,7 @@ function entryHtml() {
       <header class="sheet-head">
         <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
         ${e.mode === 'budget' ? `<h2>${title}</h2>` : seg}
-        ${canDelete ? `<button class="text-btn danger" data-act="e-delete">${e.mode === 'budget' ? '없애기' : '삭제'}</button>` : '<span class="head-pad"></span>'}
+        ${canDelete ? `<button class="text-btn danger" data-act="e-delete">${e.mode === 'budget' ? '없애기' : '삭제'}</button>` : whoChip(e)}
       </header>
       ${e.mode === 'rule' ? '<p class="sheet-hint">매달 정한 날에 자동으로 기록돼요.</p>' : ''}
       ${e.mode === 'budget' ? '<p class="sheet-hint">한 달에 쓸 돈을 정해 두면 남은 예산을 알려드려요.</p>' : ''}
@@ -614,11 +615,21 @@ function entryHtml() {
     </section>`;
 }
 
+// 새 내역을 적을 때 누구 이름으로 적히는지 보여 준다. 가족과 연결했는데 이름이 없으면 정하라고 알려 준다
+function whoChip(e) {
+  if (e.mode !== 'tx' || e.id || !(ui.me || sync.status.linked)) return '<span class="head-pad"></span>';
+  return ui.me
+    ? `<button class="who-chip" data-act="e-who" aria-label="적는 사람 ${esc(ui.me)}. 눌러서 바꾸기">${esc(ui.me)}</button>`
+    : '<button class="who-chip ask" data-act="e-who">이름 정하기</button>';
+}
+
 function paintAmount() {
   const n = Number(sheet.amount || 0);
+  // 금액 아래 줄: 금액을 말로 푼 것 + (고칠 때) 누가 적었는지
+  const read = [L.koreanAmount(n), sheet.id && sheet.by ? `${esc(sheet.by)} 적음` : ''].filter(Boolean).join(' · ');
   $('#e-amount').innerHTML = `
     <p class="amount-num${n ? '' : ' zero'}"><span>${L.formatNum(n)}</span>원</p>
-    <p class="amount-read">${L.koreanAmount(n) || '&nbsp;'}</p>`;
+    <p class="amount-read">${read || '&nbsp;'}</p>`;
   $('#e-save').disabled = n <= 0;
   if ($('#e-more')) $('#e-more').disabled = n <= 0;
 }
@@ -796,7 +807,7 @@ function nameHtml() {
     <div class="backdrop" data-act="close"></div>
     <section class="sheet form" role="dialog" aria-modal="true" aria-label="내 이름" tabindex="-1">
       <header class="sheet-head">
-        <button class="icon-btn" data-act="close" aria-label="닫기">${xIcon}</button>
+        <button class="icon-btn" data-act="${sheet.back ? 'name-back' : 'close'}" aria-label="닫기">${xIcon}</button>
         <h2>내 이름</h2><span class="head-pad"></span>
       </header>
       <label class="field"><span>이 폰에서 적는 내역에 표시할 이름</span>
@@ -808,9 +819,11 @@ function nameHtml() {
 }
 
 function nameSave() {
+  const back = sheet.back;
   ui.me = $('#n-name').value.trim().slice(0, 6);
   saveUi();
-  closeSheet();
+  if (back) openSheet(back); // 적던 내역으로 돌아간다
+  else closeSheet();
   render();
   toast(ui.me ? `이제 '${ui.me}' 이름으로 적혀요` : '이름을 지웠어요');
 }
@@ -1099,6 +1112,14 @@ const actions = {
     else openSheet({ kind: 'name' }); // 코드를 만든 직후에는 이어서 이름을 정한다
   },
   'name-edit': () => openSheet({ kind: 'name' }),
+  'name-back': () => openSheet(sheet.back),
+  // 내역을 적다가 이름을 바꾼다 — 적던 금액·메모·날짜는 그대로 들고 갔다가 돌아온다
+  'e-who': () => {
+    const e = sheet;
+    e.memo = $('#e-memo').value;
+    e.date = $('#e-date').value || e.date;
+    openSheet({ kind: 'name', back: e });
+  },
   'name-save': nameSave,
   'dlg-yes': () => closeDialog(true),
   'dlg-no': () => closeDialog(false),
@@ -1305,6 +1326,13 @@ store.subscribe((ok) => {
 applyFontScale();
 if (history.state?.sheet) history.replaceState(null, ''); // 새로 고침으로 남은 시트 흔적 정리
 refreshDay();
+
+// 가족과 연결했는데 이 기기 이름이 없으면 한 번만 물어본다 (이름이 있어야 누가 적었는지 보인다)
+if (sync.status.linked && !ui.me && !ui.nameAsked) {
+  ui.nameAsked = true;
+  saveUi();
+  openSheet({ kind: 'name' });
+}
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
