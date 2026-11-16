@@ -11,7 +11,7 @@
   --accent-ink: #ffffff;
   --accent-weak: #e8f1fc;
   --accent-text: #1c5cab;
-  --income: #1c5cab;
+  --income: #006300; /* 수입은 초록 — 누를 수 있는 것(파랑)과 구분 */
   --danger: #d03b3b;
   --danger-weak: #fdecec;
   --track: #eceef2;
@@ -34,7 +34,7 @@
     --accent-ink: #ffffff;
     --accent-weak: #18273b;
     --accent-text: #86b6ef;
-    --income: #86b6ef;
+    --income: #3dbb5c;
     --danger: #e66767;
     --danger-weak: #3a1f1f;
     --track: #2b2c31;
@@ -292,6 +292,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .sheet-head h2 { font-size: calc(16px * var(--fs)); font-weight: 700; }
 .text-btn { height: 40px; padding: 0 6px; font-weight: 600; font-size: calc(14.5px * var(--fs)); }
 .text-btn.danger { color: var(--danger); }
+.text-btn.go { color: var(--accent-text); }
 .sheet-hint { flex: none; text-align: center; font-size: calc(13px * var(--fs)); color: var(--ink3); margin-top: -4px; }
 
 .amount { flex: none; text-align: center; }
@@ -300,7 +301,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .amount-num.zero { color: var(--ink3); }
 .amount-read { font-size: calc(13px * var(--fs)); color: var(--ink3); min-height: 19px; }
 
-.cats { flex: 1 1 auto; min-height: 66px; overflow-y: auto; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; align-content: start; overscroll-behavior: contain; }
+.cats-wrap { flex: 1 1 auto; min-height: 66px; display: flex; flex-direction: column; position: relative; }
+.cats-wrap::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: linear-gradient(transparent, var(--card) 85%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.cats-more { position: absolute; left: 50%; bottom: -3px; z-index: 1; transform: translateX(-50%); width: 30px; height: 18px; border-radius: 9px; background: var(--fill); color: var(--ink2); display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.cats-more svg { width: 16px; height: 16px; stroke-width: 2.4; }
+.cats-wrap.more::after, .cats-wrap.more .cats-more { opacity: 1; }
+.cats { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; align-content: start; overscroll-behavior: contain; }
 .fs-big .cats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fs-big .cat { height: 68px; }
 .cat { height: 62px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; border: 1.5px solid transparent; }
