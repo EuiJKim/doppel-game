@@ -462,5 +462,39 @@ await atest('연결 끊기: 기록은 남고 더 올리지 않는다. 서버 거
   assert.equal(liveTx(A).length, 2);
 });
 
+await atest('화면을 떠날 때: 받기 전에 먼저 올린다 (적자마자 닫아도 다른 기기에 보인다)', async () => {
+  const server = createFakeFirestore();
+  const order = [];
+  const spy = { ...server, fetch: (url, init) => (order.push(url.includes(':commit') ? 'commit' : 'query'), server.fetch(url, init)) };
+  const A = device(spy);
+  const B = device(server);
+  const code = await A.sync.create();
+  await B.sync.join(code);
+  // 올릴 것이 없으면 아무것도 하지 않는다
+  order.length = 0;
+  await A.sync.flush();
+  assert.deepEqual(order, []);
+  A.store.saveTx({ type: 'expense', amount: 10000, cat: 'c_food', date: '2026-11-16', memo: '만원' });
+  B.store.saveTx({ type: 'expense', amount: 7000, cat: 'c_cafe', date: '2026-11-16', memo: '커피' });
+  await B.sync.syncNow();
+  await A.sync.flush();
+  assert.equal(order[0], 'commit'); // 올리기가 먼저
+  assert.equal(A.sync.status.pending, 0);
+  assert.deepEqual(liveTx(A), ['만원:10000', '커피:7000']); // 이어서 받기도 한다
+  await B.sync.syncNow();
+  assert.deepEqual(liveTx(B), ['만원:10000', '커피:7000']);
+  // 같은 기록을 B 가 더 늦게 고쳤는데 A 가 예전 것을 먼저 올려 덮어써도, 결국 늦게 고친 쪽으로 맞춰진다
+  const t = A.store.txs.find((x) => x.memo === '만원');
+  A.store.saveTx({ id: t.id, amount: 11000 });
+  await tick();
+  B.store.saveTx({ id: t.id, amount: 12000 });
+  await B.sync.syncNow();
+  await A.sync.flush();
+  await B.sync.syncNow();
+  await A.sync.syncNow();
+  assert.deepEqual(liveTx(A), ['만원:12000', '커피:7000']);
+  assert.deepEqual(liveTx(B), ['만원:12000', '커피:7000']);
+});
+
 console.log(`\n${n}개 통과`);
 process.exit(0); // 예약된 동기화 타이머를 기다리지 않는다

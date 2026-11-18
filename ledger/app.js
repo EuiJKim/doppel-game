@@ -847,6 +847,7 @@ function codeHtml() {
       </header>
       <p class="code-box" id="code-text">${esc(code)}</p>
       <p class="muted small">다른 폰의 가계부에서 설정 → 가족과 같이 쓰기 → <b>코드 입력하기</b>에 이 코드를 넣으면 연결됩니다.</p>
+      <p class="muted small">아이폰은 Safari가 아니라 <b>홈 화면에 설치한 가계부</b>에서 입력해야 해요. 둘은 기록을 따로 보관합니다.</p>
       <p class="muted small">이 코드를 아는 사람은 가계부를 보고 고칠 수 있어요. 비밀번호처럼 가족에게만 알려 주세요.</p>
       <div class="btn-pair">
         <button class="soft-btn" data-act="code-copy">코드 복사</button>
@@ -895,6 +896,7 @@ function joinHtml() {
         <input type="text" id="j-code" class="code-input" placeholder="ABCDE-FGHJK-LMNPQ-RSTUV" maxlength="30" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done">
       </label>
       <p class="muted small">연결하면 이 기기에 있던 기록도 가족 가계부에 합쳐집니다.</p>
+      ${isIOS() && !isStandalone() ? '<p class="warn small">지금은 Safari로 열려 있어요. 아이폰은 Safari와 홈 화면에 설치한 가계부가 기록을 따로 보관합니다. 설치해서 쓸 거라면 <b>설치한 가계부를 열어 거기서</b> 코드를 입력하세요.</p>' : ''}
       <button class="primary" data-act="join-save" id="j-save">연결하기</button>
     </section>`;
 }
@@ -971,7 +973,7 @@ function guideHtml() {
         <h2>홈 화면에 설치</h2><span class="head-pad"></span>
       </header>
       <ol class="steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>
-      ${isIOS() ? '<p class="muted small">아이폰은 설치한 앱과 Safari가 기록을 따로 보관합니다. 설치한 뒤에는 홈 화면의 가계부에서만 기록하세요.</p>' : ''}
+      ${isIOS() ? '<p class="muted small">아이폰은 설치한 앱과 Safari가 기록을 따로 보관합니다. 설치한 뒤에는 홈 화면의 가계부에서만 기록하고, 가족 코드도 거기서 입력하세요.</p>' : ''}
       <button class="primary" data-act="close">확인</button>
     </section>`;
 }
@@ -1292,16 +1294,17 @@ function refreshDay() {
   if (!store.applyRecurring(today)) render();
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
+  if (document.hidden) return sync.flush(); // 다른 앱으로 넘어가거나 닫기 전에, 방금 적은 것을 올려 둔다
   if (!sheet) refreshDay();
   sync.request(0);
 });
+window.addEventListener('pagehide', () => sync.flush());
 
-// 동기화: 열 때, 다시 볼 때, 인터넷이 돌아올 때, 그리고 보고 있는 동안 30초마다 맞춘다
+// 동기화: 적은 직후, 열 때, 다시 볼 때, 인터넷이 돌아올 때, 그리고 보고 있는 동안 15초마다 맞춘다
 window.addEventListener('online', () => sync.request(0));
 setInterval(() => {
   if (!document.hidden && navigator.onLine !== false) sync.request(0);
-}, 30000);
+}, 15000);
 sync.subscribe(() => {
   const el = $('#sync-status');
   if (el) el.textContent = syncStatusText();
