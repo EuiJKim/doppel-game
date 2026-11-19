@@ -36,7 +36,7 @@ export function monthTx(txs, ym) {
   return txs.filter((t) => !t.deleted && t.date.startsWith(ym));
 }
 
-// 저축은 지출과 따로 센다 (예산에서 빠지지 않는다). balance = 수입 − 지출 − 저축
+// 저축은 지출과 따로 센다 (예산에서도, 남은 돈에서도 빠지지 않는다). balance = 수입 − 지출
 export function summarize(txs) {
   let income = 0;
   let expense = 0;
@@ -47,10 +47,10 @@ export function summarize(txs) {
     else if (t.type === 'saving') saving += t.amount;
     else expense += t.amount;
   }
-  return { income, expense, saving, balance: income - expense - saving };
+  return { income, expense, saving, balance: income - expense };
 }
 
-// 남은 돈 = 수입 − 지출 − 저축. 달이 바뀌어도 이어진다:
+// 남은 돈 = 수입 − 지출. 저축은 쓴 돈이 아니라 가지고 있는 돈이라 빼지 않는다. 달이 바뀌어도 이어진다:
 // carry = 그 전 달까지 남아서 넘어온 돈, month = 그 달에 남은 돈, total = 그 달 말까지 남은 돈
 export function leftover(txs, ym) {
   let carry = 0;
@@ -60,6 +60,7 @@ export function leftover(txs, ym) {
     if (t.deleted) continue;
     const m = t.date.slice(0, 7);
     if (m > ym) continue;
+    if (t.type === 'saving') continue;
     const v = t.type === 'income' ? t.amount : -t.amount;
     if (m === ym) month += v;
     else {
