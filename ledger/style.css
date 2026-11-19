@@ -153,9 +153,6 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .kv b.income { color: var(--income); }
 .kv b.saving { color: var(--saving); }
 .kv b.neg, .total b.neg { color: var(--danger); }
-.aside { margin: 10px 0 0; display: flex; align-items: baseline; justify-content: space-between; gap: 2px 12px; flex-wrap: wrap; font-size: calc(15px * var(--fs)); color: var(--ink2); }
-.aside small { font-size: calc(12.5px * var(--fs)); color: var(--ink3); margin-left: 4px; }
-.aside b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: auto; }
 .total { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line); display: flex; align-items: baseline; justify-content: space-between; gap: 2px 12px; flex-wrap: wrap; font-size: calc(15px * var(--fs)); font-weight: 700; }
 .total b { font-size: calc(24px * var(--fs)); font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-left: auto; overflow-wrap: anywhere; }
 .savings .meter { margin-top: 4px; }

@@ -235,7 +235,7 @@ test('저축: 지출·예산과 따로 세고 목표 대비 상태를 알려 준
     tx('e', 'saving', 999, 's_bank', '2026-11-02', { deleted: true }),
   ];
   const nov = L.monthTx(txs, '2026-11');
-  assert.deepEqual(L.summarize(nov), { income: 3000000, expense: 20000, saving: 300000, balance: 2980000 });
+  assert.deepEqual(L.summarize(nov), { income: 3000000, expense: 20000, saving: 300000, balance: 2680000 });
   assert.equal(L.savedTotal(txs), 400000);
   // 저축은 예산에서 빠지지 않고 '오늘 쓴 돈'에도 들지 않는다
   const t = L.todayStatus({ budget: 600000, txs, today: '2026-11-16' });
@@ -254,7 +254,7 @@ test('저축: 지출·예산과 따로 세고 목표 대비 상태를 알려 준
   assert.deepEqual(due.map((x) => [x.date, x.type]), [['2026-10-25', 'saving']]);
 });
 
-test('남은 돈: 수입 − 지출이 달을 넘어 이어진다. 저축은 빼지 않는다', () => {
+test('남은 돈: 수입 − 지출 − 저축이 달을 넘어 이어진다', () => {
   const txs = [
     tx('a', 'income', 300000, 'i_pay', '2026-01-25'),
     tx('b', 'saving', 150000, 's_bank', '2026-01-26'),
@@ -263,12 +263,10 @@ test('남은 돈: 수입 − 지출이 달을 넘어 이어진다. 저축은 빼
     tx('e', 'expense', 999, 'c_food', '2026-02-27', { deleted: true }),
     tx('f', 'expense', 40000, 'c_food', '2026-03-02'),
   ];
-  assert.deepEqual(L.leftover(txs, '2026-01'), { carry: 0, month: 300000, total: 300000, hasPrior: false });
-  assert.deepEqual(L.leftover(txs, '2026-02'), { carry: 300000, month: 350000, total: 650000, hasPrior: true });
-  assert.deepEqual(L.leftover(txs, '2026-03'), { carry: 650000, month: -40000, total: 610000, hasPrior: true });
+  assert.deepEqual(L.leftover(txs, '2026-01'), { carry: 0, month: 150000, total: 150000, hasPrior: false });
+  assert.deepEqual(L.leftover(txs, '2026-02'), { carry: 150000, month: 200000, total: 350000, hasPrior: true });
+  assert.deepEqual(L.leftover(txs, '2026-03'), { carry: 350000, month: -40000, total: 310000, hasPrior: true });
   assert.deepEqual(L.leftover(txs, '2025-12'), { carry: 0, month: 0, total: 0, hasPrior: false });
-  // 저축만 적은 달: 남은 돈이 마이너스가 되지 않는다
-  assert.deepEqual(L.leftover([tx('s', 'saving', 10000, 's_bank', '2026-04-01')], '2026-04'), { carry: 0, month: 0, total: 0, hasPrior: false });
 });
 
 test('저축: 저장소가 저축 카테고리·내역·목표를 다룬다 (예전 기록에도 카테고리가 생긴다)', () => {

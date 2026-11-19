@@ -176,8 +176,7 @@ function viewHome() {
     </section>` : ''}`;
 }
 
-// 이번 달 정리: 수입 − 지출, 거기에 지난달에서 넘어온 돈을 더한 것이 남은 돈 (영수증처럼 한 장에).
-// 저축은 쓴 돈이 아니라서 빼지 않고, 합계 아래에 따로 적는다
+// 이번 달 정리: 수입 − 지출 − 저축, 거기에 지난달에서 넘어온 돈을 더한 것이 남은 돈 (영수증처럼 한 장에)
 const signed = (n) => (n < 0 ? `−${won(-n)}` : won(Math.abs(n))); // abs: -0 이 '-0원'으로 찍히지 않게
 function monthCard(sum, left, m) {
   const row = (name, cls, text) => `<p><span>${name}</span><b class="${cls}">${text}</b></p>`;
@@ -187,10 +186,10 @@ function monthCard(sum, left, m) {
       <div class="kv">
         ${row('수입', 'income', `+${won(sum.income)}`)}
         ${row('지출', '', signed(-sum.expense))}
+        ${row('저축', 'saving', signed(-sum.saving))}
         ${left.hasPrior ? row('지난달에서 넘어온 돈', left.carry < 0 ? 'neg' : '', signed(left.carry)) : ''}
       </div>
       <p class="total"><span>남은 돈</span><b class="${left.total < 0 ? 'neg' : ''}">${signed(left.total)}</b></p>
-      <p class="aside"><span>저축 <small>남은 돈에서 빼지 않아요</small></span><b class="saving">${won(sum.saving)}</b></p>
     </section>`;
 }
 
